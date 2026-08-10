@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+**/__pycache__/
+*.py[cod]
+app/firebase/*.json
+credentials.md
+current_production_detail.txt
+migration_deployment.md
+.migration_staging/
+deployment/**/secrets/
+graphify-out/

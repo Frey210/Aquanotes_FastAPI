@@ -1,13 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
 import os
+import hmac
 from app import models, schemas, database
 from typing import List
 
 router = APIRouter(prefix="/admin", tags=["Administrator"])
 
 # Dapatkan API Key dari environment variable
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "default-admin-secret")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+
+def _valid_admin_key(received_key: str | None) -> bool:
+    return bool(
+        ADMIN_API_KEY
+        and received_key
+        and hmac.compare_digest(received_key, ADMIN_API_KEY)
+    )
 
 @router.post("/devices", response_model=schemas.DeviceResponse)
 def register_device(
@@ -15,21 +23,10 @@ def register_device(
     db: Session = Depends(database.get_db),
     x_api_key: str = Header(None, alias="X-API-Key")
 ):
-    # Debugging: Cetak key yang diterima
-    print(f"Received API Key: {x_api_key}")
-    print(f"Expected API Key: {ADMIN_API_KEY}")
-    
-    if not x_api_key:
+    if not _valid_admin_key(x_api_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="API Key is required",
-            headers={"WWW-Authenticate": "APIKey"}
-        )
-    
-    if x_api_key != ADMIN_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Invalid API Key. Received: {x_api_key}",
+            detail="Invalid API Key",
             headers={"WWW-Authenticate": "APIKey"}
         )
     
@@ -57,8 +54,7 @@ def list_devices(
     db: Session = Depends(database.get_db),
     x_api_key: str = Header(None, alias="X-API-Key")
 ):
-    # Validasi API Key
-    if not x_api_key or x_api_key != ADMIN_API_KEY:
+    if not _valid_admin_key(x_api_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API Key",

@@ -1,0 +1,4 @@
+services:
+  api:
+    volumes:
+      - ./secrets/firebase-admin.json:/app/app/firebase/aqua-notes-firebase-adminsdk-fbsvc-6de08d39b2.json:ro

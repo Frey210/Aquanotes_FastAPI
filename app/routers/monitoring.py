@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from typing import Optional
@@ -8,6 +8,11 @@ router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 
 @router.get("/", response_model=schemas.MonitoringResponse)
 def get_monitoring(
+    last_n: Optional[int] = Query(
+        default=10,
+        description="Jumlah data sensor terakhir yang ingin diambil (default 10)",
+        gt=0
+    ),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
@@ -36,11 +41,10 @@ def get_monitoring(
                     models.SensorData.device_id == device.id
                 ).order_by(models.SensorData.timestamp.desc()).first()
                 
-                # Handle historical data
                 historical = db.query(models.SensorData).filter(
-                    models.SensorData.device_id == device.id,
-                    models.SensorData.timestamp >= datetime.utcnow() - timedelta(days=7)
-                ).order_by(models.SensorData.timestamp.asc()).all()
+                    models.SensorData.device_id == device.id
+                ).order_by(models.SensorData.timestamp.desc()).limit(last_n).all()
+                historical.reverse()
                 
                 # Format latest data (handle None)
                 latest_summary = None

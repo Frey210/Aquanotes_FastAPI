@@ -124,3 +124,13 @@ class Notification(Base):
     
     user = relationship("User", back_populates="notifications")
     device = relationship("Device", back_populates="notifications")
+
+class ThresholdAlertState(Base):
+    __tablename__ = "threshold_alert_states"
+
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
+    parameter = Column(String(50), primary_key=True)
+    threshold_type = Column(String(3), primary_key=True)
+    threshold_value = Column(Float, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

@@ -6,6 +6,9 @@ from typing import List, Optional
 
 router = APIRouter(prefix="/sensor", tags=["Sensor Data"])
 
+from datetime import datetime
+from fastapi import HTTPException
+
 @router.post("/", response_model=schemas.SensorDataResponse)
 def create_sensor_data(
     data: schemas.SensorDataCreate,
@@ -16,9 +19,16 @@ def create_sensor_data(
     ).first()
     
     if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    try:
+        device_timestamp = datetime.fromisoformat(data.timestamp.replace('Z', '+00:00'))
+        if device_timestamp.tzinfo is not None:
+            device_timestamp = device_timestamp.replace(tzinfo=None)
+    except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found"
+            status_code=400,
+            detail="Invalid timestamp format. Gunakan format ISO 8601 (contoh: 2025-07-18T06:00:00)"
         )
     
     # Update device status and last seen
@@ -28,6 +38,7 @@ def create_sensor_data(
     
     sensor_data = models.SensorData(
         device_id=device.id,
+        timestamp=device_timestamp,
         suhu=data.suhu,
         ph=data.ph,
         do=data.do,

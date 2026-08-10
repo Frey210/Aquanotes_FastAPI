@@ -1,1 +1,24 @@
-"app/firebase/*.json" 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment and runtime databases
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Local credentials and migration access details
+/credentials.md
+/current_production_detail.txt
+/migration_deployment.md
+/.migration_staging/
+/deployment/**/secrets/
+/app/firebase/*.json
+
+# Generated codebase analysis
+/graphify-out/

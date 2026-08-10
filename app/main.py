@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
+    admin,
     users, 
     devices, 
     tambak, 
@@ -15,10 +16,14 @@ from app.background_tasks import start_background_task
 from app.database import engine, Base
 import sqlite3
 import logging
+from prometheus_fastapi_instrumentator import Instrumentator
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AquaNotes API", version="2.0.0")
+
+# Prometheus Instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # CORS
 app.add_middleware(
@@ -30,6 +35,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(admin.router)
 app.include_router(users.router)
 app.include_router(devices.router)
 app.include_router(tambak.router)

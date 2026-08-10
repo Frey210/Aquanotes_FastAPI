@@ -1,0 +1,28 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: deployment/stage1/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "192.168.10.100:8000:8000"
+    env_file:
+      - ./secrets/app.env
+    volumes:
+      - ./data/aquanotes.db:/app/aquanotes.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  sqlite-web:
+    image: ghcr.io/coleifer/sqlite-web@sha256:19eb4a621603285106b2ba21e610ec0a456f5b8b6727cab6277b953fe615baf0
+    restart: unless-stopped
+    ports:
+      - "192.168.10.100:8001:8080"
+    env_file:
+      - ./secrets/sqlite-web.env
+    volumes:
+      - ./data:/data:ro
+    command: ["aquanotes.db", "--read-only", "--no-browser", "--password"]

@@ -59,9 +59,16 @@ class TambakCreate(BaseModel):
 class TambakResponse(BaseModel):
     id: int
     name: str
+    country: str
+    province: str
+    city: str
+    district: str
+    village: str
+    address: str
     cultivation_type: str
-    
-    model_config = ConfigDict(from_attributes=True)
+
+    class Config:
+        from_attributes = True
 
 class KolamCreate(BaseModel):
     nama: str
@@ -88,6 +95,7 @@ class SensorDataCreate(BaseModel):
     tds: float
     ammonia: float
     salinitas: float
+    timestamp: str = Field(..., description="Timestamp dalam format ISO 8601 dari device (contoh: 2025-07-18T06:00:00+08:00)")
 
 class SensorDataResponse(BaseModel):
     id: int
