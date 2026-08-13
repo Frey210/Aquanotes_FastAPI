@@ -6,6 +6,7 @@ from app import models, schemas, database, auth
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 
+@router.get("", response_model=schemas.MonitoringResponse, include_in_schema=False)
 @router.get("/", response_model=schemas.MonitoringResponse)
 def get_monitoring(
     last_n: Optional[int] = Query(
