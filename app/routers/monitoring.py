@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
 from app import models, schemas, database, auth
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
+logger = logging.getLogger(__name__)
 
 @router.get("", response_model=schemas.MonitoringResponse, include_in_schema=False)
 @router.get("/", response_model=schemas.MonitoringResponse)
@@ -93,6 +95,7 @@ def get_monitoring(
         )
 
     except Exception as e:
+        logger.exception("Monitoring query failed for user_id=%s", current_user.id)
         raise HTTPException(
             status_code=500,
             detail=f"Error retrieving monitoring data: {str(e)}"
