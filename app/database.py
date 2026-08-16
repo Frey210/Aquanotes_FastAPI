@@ -11,10 +11,6 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 Base = declarative_base()
 
-def configure_sqlite(connection):
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=30000")
-
 def get_db():
     db = SessionLocal()
     try:

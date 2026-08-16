@@ -13,7 +13,7 @@ from app.routers import (
     notifications
 )
 from app.background_tasks import start_background_task
-from app.database import engine, Base, configure_sqlite
+from app.database import engine, Base
 import sqlite3
 import logging
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -51,7 +51,6 @@ def migrate_database():
     try:
         # Cek apakah kolom sudah ada
         conn = sqlite3.connect('aquanotes.db', timeout=30)
-        configure_sqlite(conn)
         cursor = conn.cursor()
         
         # Cek tabel devices
