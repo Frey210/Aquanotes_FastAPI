@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import models, schemas, database, auth
 from typing import List, Optional
@@ -6,6 +8,7 @@ from app.auth import get_current_user
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/kolam", tags=["Kolam"])
+logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=schemas.KolamResponse)
 def create_kolam(
@@ -62,8 +65,15 @@ def delete_kolam(
     
     if not kolam:
         raise HTTPException(status_code=404, detail="Kolam not found")
-    db.delete(kolam)
-    db.commit()
+    try:
+        kolam.device_id = None
+        db.flush()
+        db.delete(kolam)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed to delete kolam_id=%s", kolam_id)
+        raise HTTPException(status_code=500, detail="Failed to delete kolam")
     return {"message": "Kolam deleted successfully"}
     
 class KolamUpdate(BaseModel):

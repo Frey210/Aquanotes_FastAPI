@@ -44,7 +44,9 @@ def get_user_notifications(
         return [{
             "id": notif.id,
             "device_id": notif.device_id,
-            "device_name": notif.device.name if notif.device else "Unknown Device",
+            "device_name": notif.device.name
+            if notif.device and notif.device.user_id == current_user.id
+            else "Unknown Device",
             "message": notif.message,
             "parameter": notif.parameter,
             "threshold_value": notif.threshold_value,

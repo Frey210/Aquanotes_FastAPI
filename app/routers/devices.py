@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status  
+from datetime import datetime
+import logging
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import models, schemas, database, auth
 from pydantic import BaseModel, Field
@@ -6,6 +9,7 @@ from typing import List, Optional
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
+logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=schemas.DeviceResponse)
 def add_device(
@@ -54,10 +58,41 @@ def remove_device(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
-    # Reset kepemilikan device
-    device.user_id = None
-    device.name = None
-    db.commit()
+    try:
+        assigned_kolam = db.query(models.Kolam).filter(
+            models.Kolam.device_id == device.id
+        ).first()
+        if assigned_kolam:
+            assigned_kolam.device_id = None
+
+        for field_name in (
+            "temp_min_threshold",
+            "temp_max_threshold",
+            "ph_min_threshold",
+            "ph_max_threshold",
+            "do_min_threshold",
+            "tds_max_threshold",
+            "ammonia_max_threshold",
+            "salinitas_min_threshold",
+            "salinitas_max_threshold",
+        ):
+            setattr(device, field_name, None)
+
+        db.query(models.ThresholdAlertState).filter(
+            models.ThresholdAlertState.device_id == device.id
+        ).delete(synchronize_session=False)
+
+        # Sensor history and prior notifications intentionally remain intact.
+        device.user_id = None
+        device.name = None
+        device.status = "offline"
+        device.last_seen = None
+        device.connection_interval = 5
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed to remove device_id=%s", device.id)
+        raise HTTPException(status_code=500, detail="Failed to remove device")
     
     return {"message": "Device removed successfully"}
 
@@ -134,25 +169,45 @@ def move_device_to_kolam(
     current_kolam = db.query(models.Kolam).filter(
         models.Kolam.device_id == device_id
     ).first()
-    
-    # Jika device saat ini terpasang di kolam, lepaskan
-    if current_kolam:
-        current_kolam.device_id = None
-        db.add(current_kolam)
-    
-    # Cek jika kolam tujuan sudah memiliki device
+
+    if current_kolam and current_kolam.id == target_kolam.id:
+        return target_kolam
+
+    displaced_device = None
     if target_kolam.device_id:
-        # Lepaskan device yang saat ini terpasang di kolam tujuan
-        old_device = db.query(models.Device).get(target_kolam.device_id)
-        if old_device:
-            old_device.kolam = None
-    
-    # Pasangkan device ke kolam tujuan
-    target_kolam.device_id = device_id
-    db.add(target_kolam)
-    
-    db.commit()
-    db.refresh(target_kolam)
+        displaced_device = db.get(models.Device, target_kolam.device_id)
+        if not displaced_device or displaced_device.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Target kolam contains a device owned by another user"
+            )
+
+    try:
+        if current_kolam:
+            current_kolam.device_id = None
+        if displaced_device:
+            target_kolam.device_id = None
+
+        # Flush detachments first so the unique device_id constraint cannot race
+        # the new assignment within this transaction.
+        db.flush()
+        target_kolam.device_id = device_id
+        db.commit()
+        db.refresh(target_kolam)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device assignment changed; please retry"
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception(
+            "Failed to move device_id=%s to kolam_id=%s",
+            device_id,
+            move_request.target_kolam_id,
+        )
+        raise HTTPException(status_code=500, detail="Failed to move device")
     
     return target_kolam
 

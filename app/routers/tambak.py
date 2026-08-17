@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import models, schemas, database, auth
 from pydantic import BaseModel, Field
@@ -6,6 +8,7 @@ from app.auth import get_current_user
 from typing import List, Optional
 
 router = APIRouter(prefix="/tambak", tags=["Tambak"])
+logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=schemas.TambakResponse)
 def create_tambak(
@@ -52,8 +55,17 @@ def delete_tambak(
     if not tambak:
         raise HTTPException(status_code=404, detail="Tambak tidak ditemukan")
     
-    db.delete(tambak)
-    db.commit()
+    try:
+        for kolam in list(tambak.kolams):
+            kolam.device_id = None
+            db.delete(kolam)
+        db.flush()
+        db.delete(tambak)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed to delete tambak_id=%s", tambak_id)
+        raise HTTPException(status_code=500, detail="Failed to delete tambak")
     return {"message": "Tambak berhasil dihapus"}
 
 class TambakUpdate(BaseModel):
