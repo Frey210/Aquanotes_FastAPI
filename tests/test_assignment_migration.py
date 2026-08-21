@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.migrate_assignment_history import migrate
+from scripts.migrate_assignment_history import finalize, migrate
 
 
 class AssignmentMigrationTest(unittest.TestCase):
@@ -60,6 +60,25 @@ class AssignmentMigrationTest(unittest.TestCase):
             self.assertEqual(
                 connection.execute("SELECT count(*) FROM sensor_data").fetchone()[0],
                 3,
+            )
+            connection.execute(
+                "INSERT INTO sensor_data VALUES (4, 31, '2026-08-04 00:00:00', NULL)"
+            )
+            connection.commit()
+            connection.close()
+
+            result = finalize(database)
+            self.assertEqual(result["status"], "finalized")
+            connection = sqlite3.connect(database)
+            self.assertIsNotNone(
+                connection.execute(
+                    "SELECT assignment_id FROM sensor_data WHERE id = 4"
+                ).fetchone()[0]
+            )
+            self.assertIsNone(
+                connection.execute(
+                    "SELECT assignment_id FROM sensor_data WHERE id = 3"
+                ).fetchone()[0]
             )
             connection.close()
 

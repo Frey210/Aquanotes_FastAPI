@@ -32,7 +32,8 @@ def migrate(database: Path, backup: Path):
         source.execute("""
             CREATE TABLE IF NOT EXISTS app_migrations (
                 name TEXT PRIMARY KEY,
-                applied_at DATETIME NOT NULL
+                applied_at DATETIME NOT NULL,
+                sensor_max_id INTEGER NOT NULL
             )
         """)
         if source.execute(
@@ -108,9 +109,13 @@ def migrate(database: Path, backup: Path):
                     AND a.is_legacy = 1
               )
         """)
+        sensor_max_id = source.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM sensor_data"
+        ).fetchone()[0]
         source.execute(
-            "INSERT INTO app_migrations(name, applied_at) VALUES (?, ?)",
-            (MIGRATION, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO app_migrations(name, applied_at, sensor_max_id) "
+            "VALUES (?, ?, ?)",
+            (MIGRATION, datetime.now(timezone.utc).isoformat(), sensor_max_id),
         )
         source.commit()
     except Exception:
@@ -131,12 +136,103 @@ def migrate(database: Path, backup: Path):
     return {"status": "applied", "sensor_rows": after, "assigned_rows": assigned}
 
 
+def finalize(database: Path):
+    """Reconcile the short old-app window. Run only while the API is stopped."""
+    connection = sqlite3.connect(database.resolve(), timeout=30)
+    connection.execute("PRAGMA busy_timeout=30000")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        cutoff_row = connection.execute(
+            "SELECT sensor_max_id FROM app_migrations WHERE name = ?",
+            (MIGRATION,),
+        ).fetchone()
+        if not cutoff_row:
+            raise RuntimeError("Assignment migration has not been applied")
+        cutoff = cutoff_row[0]
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+        devices = connection.execute("""
+            SELECT d.id, d.user_id, k.id, k.tambak_id
+            FROM devices d
+            LEFT JOIN kolam k ON k.device_id = d.id
+        """).fetchall()
+        for device_id, user_id, kolam_id, tambak_id in devices:
+            active = connection.execute("""
+                SELECT id, user_id, kolam_id, tambak_id
+                FROM device_assignments
+                WHERE device_id = ? AND ended_at IS NULL
+            """, (device_id,)).fetchone()
+            expected = (user_id, kolam_id, tambak_id)
+            if active and active[1:] == expected:
+                continue
+            if active:
+                connection.execute(
+                    "UPDATE device_assignments SET ended_at = ? WHERE id = ?",
+                    (now, active[0]),
+                )
+            if user_id is not None:
+                connection.execute("""
+                    INSERT INTO device_assignments (
+                        device_id, user_id, kolam_id, tambak_id,
+                        started_at, ended_at, is_legacy
+                    ) VALUES (?, ?, ?, ?, ?, NULL, 0)
+                """, (device_id, user_id, kolam_id, tambak_id, now))
+
+        connection.execute("""
+            UPDATE sensor_data
+            SET assignment_id = (
+                SELECT a.id
+                FROM device_assignments a
+                JOIN devices d ON d.id = a.device_id
+                WHERE a.device_id = sensor_data.device_id
+                  AND a.user_id = d.user_id
+                  AND a.ended_at IS NULL
+            )
+            WHERE id > ? AND assignment_id IS NULL
+        """, (cutoff,))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+    unassigned = connection.execute("""
+        SELECT count(*)
+        FROM sensor_data s
+        JOIN devices d ON d.id = s.device_id
+        WHERE s.id > ? AND s.assignment_id IS NULL AND d.user_id IS NOT NULL
+    """, (cutoff,)).fetchone()[0]
+    mismatches = connection.execute("""
+        SELECT count(*)
+        FROM devices d
+        LEFT JOIN kolam k ON k.device_id = d.id
+        LEFT JOIN device_assignments a
+          ON a.device_id = d.id AND a.ended_at IS NULL
+        WHERE (d.user_id IS NULL AND a.id IS NOT NULL)
+           OR (d.user_id IS NOT NULL AND (
+               a.id IS NULL OR a.user_id != d.user_id
+               OR a.kolam_id IS NOT k.id OR a.tambak_id IS NOT k.tambak_id
+           ))
+    """).fetchone()[0]
+    connection.close()
+    if unassigned or mismatches:
+        raise RuntimeError(
+            f"Finalization failed: unassigned={unassigned}, mismatches={mismatches}"
+        )
+    return {"status": "finalized", "cutoff": cutoff}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", required=True, type=Path)
-    parser.add_argument("--backup", required=True, type=Path)
+    parser.add_argument("--backup", type=Path)
+    parser.add_argument("--finalize", action="store_true")
     args = parser.parse_args()
-    print(migrate(args.database, args.backup))
+    if args.finalize:
+        print(finalize(args.database))
+    elif args.backup:
+        print(migrate(args.database, args.backup))
+    else:
+        parser.error("--backup is required unless --finalize is used")
 
 
 if __name__ == "__main__":
