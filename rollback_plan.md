@@ -140,3 +140,26 @@ Rollback ini mengaktifkan kembali key yang pernah terekspos di Git publik dan ha
 - Token Android lama berhasil.
 - Data sebelum dan selama window migrasi telah direkonsiliasi.
 - Bukti hash, count, timestamp, dan log disimpan.
+
+## Rollback khusus assignment history (22 Agustus 2026)
+
+Backup rehearsal/baseline pertama:
+
+- `/srv/aquanotes/backup/assignment-stage1-20260821T174420Z/aquanotes.before.db`
+- SHA-256: `1dc164c4b3d7a8dc0a518e22ecda42e83db34920cdf7f5c5f335987521b7026d`
+
+Rollback aplikasi saja aman: kode versi sebelumnya mengabaikan tabel
+`device_assignments` dan kolom nullable `sensor_data.assignment_id`. Utamakan
+rollback image/source tanpa mengganti database agar write IoT terbaru tidak hilang.
+
+Jika schema harus dikembalikan, hentikan API dan simpan backup database aktif
+terlebih dahulu. Jangan restore backup lama secara langsung setelah production
+menerima write. Rekonsiliasi semua row sensor, perubahan device, tambak, kolam,
+token, dan notifikasi setelah timestamp backup, baru lakukan penggantian atomik.
+
+Kriteria rollback:
+
+- `POST /sensor/` gagal atau tidak menambah tepat satu row.
+- Token mobile lama, `/monitoring`, atau endpoint utama menghasilkan 5xx.
+- Row count berkurang, integrity/FK check gagal, atau terjadi mismatch assignment.
+- `database is locked` berulang melewati timeout 30 detik.

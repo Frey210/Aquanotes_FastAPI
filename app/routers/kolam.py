@@ -6,6 +6,7 @@ from app import models, schemas, database, auth
 from typing import List, Optional
 from app.auth import get_current_user
 from pydantic import BaseModel, Field
+from app.assignments import replace_active_assignment
 
 router = APIRouter(prefix="/kolam", tags=["Kolam"])
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ def create_kolam(
     
     new_kolam = models.Kolam(**kolam.dict())
     db.add(new_kolam)
+    db.flush()
+    replace_active_assignment(db, device, new_kolam)
     db.commit()
     db.refresh(new_kolam)
     return new_kolam
@@ -66,8 +69,11 @@ def delete_kolam(
     if not kolam:
         raise HTTPException(status_code=404, detail="Kolam not found")
     try:
+        device = kolam.device
         kolam.device_id = None
         db.flush()
+        if device:
+            replace_active_assignment(db, device)
         db.delete(kolam)
         db.commit()
     except SQLAlchemyError:
@@ -118,15 +124,21 @@ def update_kolam(
                 detail="Tambak not found or you don't have permission"
             )
     
+    new_device = None
+    device_changed = (
+        "device_id" in kolam_update.model_fields_set
+        and kolam_update.device_id != db_kolam.device_id
+    )
+
     # Verifikasi device (jika diubah)
-    if kolam_update.device_id is not None and kolam_update.device_id != db_kolam.device_id:
+    if device_changed:
         if kolam_update.device_id:
-            device = db.query(models.Device).filter(
+            new_device = db.query(models.Device).filter(
                 models.Device.id == kolam_update.device_id,
                 models.Device.user_id == current_user.id
             ).first()
             
-            if not device:
+            if not new_device:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Device not found or you don't have permission"
@@ -147,9 +159,20 @@ def update_kolam(
             # Jika device_id di-set menjadi null
             kolam_update.device_id = None
 
+    old_device = db_kolam.device
+    old_tambak_id = db_kolam.tambak_id
+
     # Update fields
     for field, value in kolam_update.dict(exclude_unset=True).items():
         setattr(db_kolam, field, value)
+
+    db.flush()
+    if old_device and device_changed:
+        replace_active_assignment(db, old_device)
+    if new_device:
+        replace_active_assignment(db, new_device, db_kolam)
+    elif old_device and not device_changed and old_tambak_id != db_kolam.tambak_id:
+        replace_active_assignment(db, old_device, db_kolam)
 
     db.commit()
     db.refresh(db_kolam)

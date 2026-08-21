@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status  
 from datetime import datetime
 import logging
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app import models, schemas, database, auth
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.auth import get_current_user
+from app.assignments import replace_active_assignment
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 logger = logging.getLogger(__name__)
@@ -29,12 +31,37 @@ def add_device(
             raise HTTPException(status_code=400, detail="Device already registered to your account")
         raise HTTPException(status_code=403, detail="Device registered by another user")
     
-    # Update data device
-    db_device.name = device.name
-    db_device.user_id = current_user.id
-    
-    db.commit()
-    db.refresh(db_device)
+    try:
+        claimed = db.execute(
+            update(models.Device).where(
+                models.Device.id == db_device.id,
+                models.Device.user_id.is_(None),
+            ).values(name=device.name, user_id=current_user.id)
+        )
+        if claimed.rowcount != 1:
+            db.rollback()
+            owner_id = db.query(models.Device.user_id).filter(
+                models.Device.id == db_device.id
+            ).scalar()
+            if owner_id == current_user.id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Device already registered to your account",
+                )
+            raise HTTPException(
+                status_code=403, detail="Device registered by another user"
+            )
+
+        db.expire(db_device)
+        replace_active_assignment(db, db_device)
+        db.commit()
+        db.refresh(db_device)
+    except HTTPException:
+        raise
+    except (IntegrityError, SQLAlchemyError):
+        db.rollback()
+        logger.exception("Failed to claim device_id=%s", db_device.id)
+        raise HTTPException(status_code=409, detail="Device claim changed; please retry")
     return db_device
 
 @router.get("/", response_model=List[schemas.DeviceResponse])
@@ -84,6 +111,7 @@ def remove_device(
 
         # Sensor history and prior notifications intentionally remain intact.
         device.user_id = None
+        replace_active_assignment(db, device)
         device.name = None
         device.status = "offline"
         device.last_seen = None
@@ -192,6 +220,9 @@ def move_device_to_kolam(
         # the new assignment within this transaction.
         db.flush()
         target_kolam.device_id = device_id
+        replace_active_assignment(db, device, target_kolam)
+        if displaced_device:
+            replace_active_assignment(db, displaced_device)
         db.commit()
         db.refresh(target_kolam)
     except IntegrityError:

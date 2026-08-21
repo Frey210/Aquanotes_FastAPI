@@ -32,6 +32,9 @@ with patch.dict(sys.modules, {"app.auth": fake_auth}):
     devices = importlib.import_module("app.routers.devices")
     kolam = importlib.import_module("app.routers.kolam")
     tambak = importlib.import_module("app.routers.tambak")
+    sensor_router = importlib.import_module("app.routers.sensor")
+
+from app.assignments import replace_active_assignment
 
 
 class DeviceRelationshipTest(unittest.TestCase):
@@ -96,7 +99,12 @@ class DeviceRelationshipTest(unittest.TestCase):
     def test_remove_detaches_and_resets_device_without_deleting_history(self):
         device = self._device(1, self.user_1.id)
         pond = self._kolam(1, self.tambak_1.id, device.id)
-        sensor = models.SensorData(device_id=device.id, suhu=27)
+        self.db.add_all([device, pond])
+        self.db.flush()
+        old_assignment = replace_active_assignment(self.db, device, pond, legacy=True)
+        sensor = models.SensorData(
+            device_id=device.id, assignment_id=old_assignment.id, suhu=27
+        )
         alert = models.ThresholdAlertState(
             device_id=device.id,
             parameter="suhu",
@@ -107,7 +115,7 @@ class DeviceRelationshipTest(unittest.TestCase):
         notification = models.Notification(
             user_id=self.user_1.id, device_id=device.id, message="Test"
         )
-        self.db.add_all([device, pond, sensor, alert, notification])
+        self.db.add_all([sensor, alert, notification])
         self.db.commit()
 
         result = devices.remove_device(device.uid, self.db, self.user_1)
@@ -134,6 +142,22 @@ class DeviceRelationshipTest(unittest.TestCase):
         self.db.refresh(device)
         self.assertEqual(device.user_id, self.user_2.id)
         self.assertIsNone(device.kolam)
+        self.db.refresh(old_assignment)
+        self.assertIsNotNone(old_assignment.ended_at)
+
+        new_assignment = self.db.query(models.DeviceAssignment).filter(
+            models.DeviceAssignment.device_id == device.id,
+            models.DeviceAssignment.ended_at.is_(None),
+        ).one()
+        new_data = models.SensorData(
+            device_id=device.id, assignment_id=new_assignment.id, suhu=29
+        )
+        self.db.add(new_data)
+        self.db.commit()
+
+        visible = sensor_router.get_sensor_data(device.uid, self.db, self.user_2)
+        self.assertEqual([row.id for row in visible], [new_data.id])
+        self.assertEqual(self.db.query(models.SensorData).count(), 2)
 
     def test_delete_tambak_removes_its_kolam_but_preserves_device_data(self):
         device = self._device(1, self.user_1.id)
@@ -149,6 +173,11 @@ class DeviceRelationshipTest(unittest.TestCase):
         self.assertIsNone(self.db.get(models.Kolam, pond.id))
         self.assertIsNotNone(self.db.get(models.Device, device.id))
         self.assertEqual(self.db.query(models.SensorData).count(), 1)
+        active = self.db.query(models.DeviceAssignment).filter(
+            models.DeviceAssignment.device_id == device.id,
+            models.DeviceAssignment.ended_at.is_(None),
+        ).one()
+        self.assertIsNone(active.kolam_id)
 
     def test_delete_kolam_preserves_claimed_device_and_sensor_data(self):
         device = self._device(1, self.user_1.id)
@@ -163,6 +192,11 @@ class DeviceRelationshipTest(unittest.TestCase):
         self.assertIsNone(self.db.get(models.Kolam, pond.id))
         self.assertEqual(self.db.get(models.Device, device.id).user_id, self.user_1.id)
         self.assertEqual(self.db.query(models.SensorData).count(), 1)
+        active = self.db.query(models.DeviceAssignment).filter(
+            models.DeviceAssignment.device_id == device.id,
+            models.DeviceAssignment.ended_at.is_(None),
+        ).one()
+        self.assertIsNone(active.kolam_id)
 
     def test_move_replaces_target_device_without_losing_either_history(self):
         moving = self._device(1, self.user_1.id)
@@ -193,6 +227,36 @@ class DeviceRelationshipTest(unittest.TestCase):
         self.assertEqual(target.device_id, moving.id)
         self.assertIsNone(displaced.kolam)
         self.assertEqual(self.db.query(models.SensorData).count(), 2)
+        assignments = {
+            row.device_id: row
+            for row in self.db.query(models.DeviceAssignment).filter(
+                models.DeviceAssignment.ended_at.is_(None)
+            )
+        }
+        self.assertEqual(assignments[moving.id].kolam_id, target.id)
+        self.assertIsNone(assignments[displaced.id].kolam_id)
+
+    def test_update_kolam_can_detach_device_without_leaking_old_context(self):
+        device = self._device(1, self.user_1.id)
+        pond = self._kolam(1, self.tambak_1.id, device.id)
+        self.db.add_all([device, pond])
+        self.db.commit()
+        replace_active_assignment(self.db, device, pond)
+        self.db.commit()
+
+        result = kolam.update_kolam(
+            pond.id,
+            kolam.KolamUpdate(device_id=None),
+            self.user_1,
+            self.db,
+        )
+
+        self.assertIsNone(result.device_id)
+        active = self.db.query(models.DeviceAssignment).filter(
+            models.DeviceAssignment.device_id == device.id,
+            models.DeviceAssignment.ended_at.is_(None),
+        ).one()
+        self.assertIsNone(active.kolam_id)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from app import models, schemas, database, auth
 from pydantic import BaseModel, Field
 from app.auth import get_current_user
 from typing import List, Optional
+from app.assignments import replace_active_assignment
 
 router = APIRouter(prefix="/tambak", tags=["Tambak"])
 logger = logging.getLogger(__name__)
@@ -57,7 +58,11 @@ def delete_tambak(
     
     try:
         for kolam in list(tambak.kolams):
+            device = kolam.device
             kolam.device_id = None
+            db.flush()
+            if device:
+                replace_active_assignment(db, device)
             db.delete(kolam)
         db.flush()
         db.delete(tambak)

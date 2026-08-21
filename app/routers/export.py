@@ -6,13 +6,15 @@ import csv
 import io
 from app import models, database
 from app.schemas import ExportRequest
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/export", tags=["Export Data"])
 
 @router.post("/csv")
 def export_to_csv(
     request: ExportRequest,
-    db: Session = Depends(database.get_db)
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     # Validasi tanggal
     if request.start_date > request.end_date:
@@ -22,8 +24,9 @@ def export_to_csv(
         )
 
     # Query data
-    sensor_data = db.query(models.SensorData).filter(
+    sensor_data = db.query(models.SensorData).join(models.DeviceAssignment).filter(
         models.SensorData.device_id == request.device_id,
+        models.DeviceAssignment.user_id == current_user.id,
         models.SensorData.timestamp >= datetime.combine(request.start_date, datetime.min.time()),
         models.SensorData.timestamp <= datetime.combine(request.end_date, datetime.max.time())
     ).order_by(models.SensorData.timestamp).all()

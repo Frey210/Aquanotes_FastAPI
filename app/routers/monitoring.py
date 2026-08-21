@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import logging
 from app import models, schemas, database, auth
+from app.assignments import get_active_assignment
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 logger = logging.getLogger(__name__)
@@ -38,16 +39,19 @@ def get_monitoring(
             if kolam.device:
                 device = kolam.device
                 devices.append(device)
-                
-                # Handle latest data
-                latest = db.query(models.SensorData).filter(
-                    models.SensorData.device_id == device.id
-                ).order_by(models.SensorData.timestamp.desc()).first()
-                
-                historical = db.query(models.SensorData).filter(
-                    models.SensorData.device_id == device.id
-                ).order_by(models.SensorData.timestamp.desc()).limit(last_n).all()
-                historical.reverse()
+                assignment = get_active_assignment(db, device.id)
+
+                latest = None
+                historical = []
+                if assignment:
+                    latest = db.query(models.SensorData).filter(
+                        models.SensorData.assignment_id == assignment.id
+                    ).order_by(models.SensorData.timestamp.desc()).first()
+
+                    historical = db.query(models.SensorData).filter(
+                        models.SensorData.assignment_id == assignment.id
+                    ).order_by(models.SensorData.timestamp.desc()).limit(last_n).all()
+                    historical.reverse()
                 
                 # Format latest data (handle None)
                 latest_summary = None

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -71,6 +71,7 @@ class Device(Base):
     owner = relationship("User", back_populates="devices")
     kolam = relationship("Kolam", back_populates="device", uselist=False)
     sensor_data = relationship("SensorData", back_populates="device")
+    assignments = relationship("DeviceAssignment", back_populates="device")
     notifications = relationship("Notification", back_populates="device")
 
 class Kolam(Base):
@@ -94,6 +95,7 @@ class SensorData(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"))
+    assignment_id = Column(Integer, ForeignKey("device_assignments.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     suhu = Column(Float)
     ph = Column(Float)
@@ -103,9 +105,38 @@ class SensorData(Base):
     salinitas = Column(Float)
     
     device = relationship("Device", back_populates="sensor_data")
+    assignment = relationship("DeviceAssignment", back_populates="sensor_data")
     
     __table_args__ = (
         Index('ix_sensor_data_device_timestamp', 'device_id', 'timestamp'),
+        Index('ix_sensor_data_assignment_timestamp', 'assignment_id', 'timestamp'),
+    )
+
+class DeviceAssignment(Base):
+    __tablename__ = "device_assignments"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Snapshot IDs intentionally survive physical deletion of a pond/farm.
+    kolam_id = Column(Integer, nullable=True)
+    tambak_id = Column(Integer, nullable=True)
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    is_legacy = Column(Boolean, nullable=False, default=False)
+
+    device = relationship("Device", back_populates="assignments")
+    sensor_data = relationship("SensorData", back_populates="assignment")
+
+    __table_args__ = (
+        Index('ix_device_assignments_user_device', 'user_id', 'device_id'),
+        Index(
+            'ux_device_assignments_active',
+            'device_id',
+            unique=True,
+            sqlite_where=text('ended_at IS NULL'),
+            postgresql_where=text('ended_at IS NULL'),
+        ),
     )
 
 class Notification(Base):

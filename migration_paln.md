@@ -401,3 +401,36 @@ Audit + rotasi secret
   → baru siapkan dan rehearsal PostgreSQL
   → cutover database terpisah
 ```
+
+## 16. Tahap 1 assignment history (22 Agustus 2026)
+
+Perubahan ini dilakukan sebelum migrasi PostgreSQL/TimescaleDB agar histori
+kepemilikan mulai tercatat sekarang tanpa mengubah kontrak firmware atau mobile.
+
+- `device_assignments` menyimpan periode user, kolam, dan tambak.
+- `sensor_data.assignment_id` bersifat nullable dan tidak diekspos melalui API.
+- Backfill mengatribusikan data lama ke pemilik serta kolam saat migrasi.
+- Data milik device tanpa pemilik tetap tersimpan dengan `assignment_id = NULL`.
+- Remove menutup assignment; claim dan move membuat assignment baru.
+- Monitoring, sensor history, export, dan threshold hanya membaca assignment user
+  yang berhak.
+
+Rehearsal pada salinan production:
+
+- 1.126.147 row sensor sebelum dan sesudah migrasi.
+- 1.084.420 row ter-backfill; 41.727 row device tanpa pemilik tetap `NULL`.
+- 20 assignment aktif, nol mismatch device, nol FK error, integrity `ok`.
+- Durasi 12 detik termasuk backup yang dibuat script.
+- OpenAPI path dan schema tetap sama; `/export/csv` hanya bertambah kewajiban
+  bearer token untuk menutup akses histori lintas user.
+
+Gate sebelum deploy:
+
+- [x] Backup online konsisten dan SHA-256 tersimpan.
+- [x] Rehearsal pada salinan production berhasil.
+- [x] IoT canary pada staging mendapat HTTP 200 dan tepat satu row baru.
+- [x] Field `assignment_id` tidak muncul pada request/response API.
+- [x] Bearer token lama dan `/monitoring` staging mendapat HTTP 200.
+- [ ] Backup final sesaat sebelum migrasi production.
+- [ ] Migrasi production, build image, dan smoke test.
+- [ ] Observasi setiap UID aktif dan error 5xx/database lock.

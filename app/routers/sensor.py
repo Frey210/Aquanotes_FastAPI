@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from app import models, schemas, database
 from typing import List, Optional
+from app.assignments import get_active_assignment
 
 router = APIRouter(prefix="/sensor", tags=["Sensor Data"])
 
@@ -36,8 +37,10 @@ def create_sensor_data(
     device.status = 'online'
     db.add(device)
     
+    assignment = get_active_assignment(db, device.id)
     sensor_data = models.SensorData(
         device_id=device.id,
+        assignment_id=assignment.id if assignment else None,
         timestamp=device_timestamp,
         suhu=data.suhu,
         ph=data.ph,
@@ -80,8 +83,11 @@ def get_sensor_data(
         )
 
     # 2. Query data
-    sensor_data = db.query(models.SensorData).filter(
-        models.SensorData.device_id == device.id
+    sensor_data = db.query(models.SensorData).join(
+        models.DeviceAssignment
+    ).filter(
+        models.SensorData.device_id == device.id,
+        models.DeviceAssignment.user_id == current_user.id,
     ).all()
 
     return sensor_data

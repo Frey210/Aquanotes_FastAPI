@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import SessionLocal
 from app.firebase_service import send_fcm_notification
+from app.assignments import get_active_assignment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,8 +79,11 @@ def _seed_threshold_alert_states(db):
     now = datetime.utcnow()
 
     for device in devices:
+        assignment = get_active_assignment(db, device.id)
+        if not assignment:
+            continue
         latest = db.query(models.SensorData).filter(
-            models.SensorData.device_id == device.id
+            models.SensorData.assignment_id == assignment.id
         ).order_by(models.SensorData.timestamp.desc()).first()
         if not latest:
             continue
@@ -121,8 +125,11 @@ def check_thresholds():
             ).all()
             
             for device in devices:
+                assignment = get_active_assignment(db, device.id)
+                if not assignment:
+                    continue
                 latest = db.query(models.SensorData).filter(
-                    models.SensorData.device_id == device.id
+                    models.SensorData.assignment_id == assignment.id
                 ).order_by(models.SensorData.timestamp.desc()).first()
                 
                 if not latest:
