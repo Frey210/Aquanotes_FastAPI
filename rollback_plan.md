@@ -148,6 +148,16 @@ Backup rehearsal/baseline pertama:
 - `/srv/aquanotes/backup/assignment-stage1-20260821T174420Z/aquanotes.before.db`
 - SHA-256: `1dc164c4b3d7a8dc0a518e22ecda42e83db34920cdf7f5c5f335987521b7026d`
 
+Backup final production dan image rollback:
+
+- `/srv/aquanotes/backup/assignment-cutover-20260821T175349Z/aquanotes.before.db`
+- SHA-256: `3a5ab595dccc7a039209b98d1854a9846c6c361f0e02b69335e25a3911943ac3`
+- Source lama: `/srv/aquanotes/backup/assignment-cutover-20260821T175349Z/source`
+- Image lama: `sha256:30963964ee23e23d0961ed704793a39e062bd79b3061fec6f31f7eec977db472`
+- Tag image lama: `aquanotes-api:pre-assignment-20260821T175349Z`
+- Commit baru: `8241caf8ec35ee143f76a1c451e9ae0a7b715ff0`
+- Cutoff sensor ID: `1128233`
+
 Rollback aplikasi saja aman: kode versi sebelumnya mengabaikan tabel
 `device_assignments` dan kolom nullable `sensor_data.assignment_id`. Utamakan
 rollback image/source tanpa mengganti database agar write IoT terbaru tidak hilang.

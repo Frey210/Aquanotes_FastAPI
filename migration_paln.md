@@ -431,6 +431,20 @@ Gate sebelum deploy:
 - [x] IoT canary pada staging mendapat HTTP 200 dan tepat satu row baru.
 - [x] Field `assignment_id` tidak muncul pada request/response API.
 - [x] Bearer token lama dan `/monitoring` staging mendapat HTTP 200.
-- [ ] Backup final sesaat sebelum migrasi production.
-- [ ] Migrasi production, build image, dan smoke test.
-- [ ] Observasi setiap UID aktif dan error 5xx/database lock.
+- [x] Backup final sesaat sebelum migrasi production.
+- [x] Migrasi production, build image, dan smoke test.
+- [x] Observasi awal setiap device aktif dan error 5xx/database lock.
+
+Hasil cutover production:
+
+- Commit/image: `8241caf8ec35ee143f76a1c451e9ae0a7b715ff0`.
+- Cutover dimulai `2026-08-21T17:54:43Z` (`2026-08-22 01:54:43` WITA/SGT).
+- Cutoff sensor ID: `1128233`.
+- Backup final: `/srv/aquanotes/backup/assignment-cutover-20260821T175349Z/aquanotes.before.db`.
+- SHA-256: `3a5ab595dccc7a039209b98d1854a9846c6c361f0e02b69335e25a3911943ac3`.
+- Public docs/OpenAPI, token lama, monitoring umum, dan monitoring user 15: HTTP 200.
+- Device 21 adalah satu-satunya device berstatus online saat validasi dan langsung
+  meneruskan data alami setelah cutover; seluruh row barunya memiliki assignment.
+- Integrity `ok`, nol FK error, nol mismatch assignment, nol 5xx/database lock.
+- Device 31 sudah tidak mengirim sejak 21 Agustus sebelum cutover; kondisinya
+  bukan akibat deployment assignment ini.
