@@ -143,13 +143,28 @@ Rollback ini mengaktifkan kembali key yang pernah terekspos di Git publik dan ha
 
 ## Rollback Tahap 2 PostgreSQL (23 Agustus 2026)
 
-Selama rehearsal tidak diperlukan rollback production karena Cloudflare dan
-service lama tidak diubah. Jika API target gagal, hentikan hanya stack `stage2`
-di `docker-01`; production SQLite tetap menjadi sumber kebenaran.
+Cutover final sudah selesai. Origin aktif adalah `http://192.168.10.64:8000`,
+API SQLite lama berhenti, dan SQLite-web lama tetap berjalan untuk inspeksi.
+Snapshot rollback immutable:
 
-Pada cutover final, jangan hapus SQLite final. Rollback dilakukan dengan
-mengembalikan origin Cloudflare ke API lama, lalu rekonsiliasi setiap write yang
-sempat diterima PostgreSQL setelah cutoff sebelum mengaktifkan write lama kembali.
+- `/srv/aquanotes/backup/stage2-final-20260823/aquanotes.final.db`
+- SHA-256:
+  `936f253bf18c8f491d6e359aa96f87e3314cde91e1b98ed08f87657e4a0e4858`
+- Cutoff sensor ID: `1136909`
+
+Jika rollback diperlukan setelah PostgreSQL menerima write:
+
+1. Hentikan background dan write API baru.
+2. Ekspor serta rekonsiliasi semua perubahan PostgreSQL setelah cutoff ID
+   `1136909`; jangan langsung menimpa database dengan snapshot lama.
+3. Jalankan kembali `aquanotes-api-1` pada server lama dan verifikasi health
+   secara internal.
+4. Kembalikan origin Cloudflare ke `http://192.168.10.100:8000`.
+5. Verifikasi sensor, token mobile, monitoring, dan row count sebelum membuka
+   kembali write penuh.
+
+Jika masalah dapat diperbaiki pada origin baru tanpa kehilangan write, pertahankan
+PostgreSQL sebagai sumber kebenaran dan rollback hanya image API.
 
 ## Rollback khusus assignment history (22 Agustus 2026)
 

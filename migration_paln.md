@@ -429,6 +429,30 @@ Belum cutover: snapshot rehearsal akan tertinggal selama production lama terus
 menerima write. Cutover memerlukan backup dan import final dalam window write
 singkat setelah seluruh gate disetujui.
 
+## 18. Tahap 2 - cutover PostgreSQL selesai (23 Agustus 2026)
+
+- API SQLite lama dihentikan hanya setelah target PostgreSQL siap; data dan
+  container lama tetap utuh untuk rollback.
+- Snapshot final: `/srv/aquanotes/backup/stage2-final-20260823/aquanotes.final.db`.
+- SHA-256 SQLite final:
+  `936f253bf18c8f491d6e359aa96f87e3314cde91e1b98ed08f87657e4a0e4858`.
+- Integrity SQLite `ok`, nol FK error, 1.134.881 sensor, cutoff ID `1136909`,
+  timestamp terakhir `2026-08-23 17:25:42`.
+- Import final PostgreSQL tervalidasi: 15 users, 12 tambak, 31 devices,
+  19 kolam, 20 assignments, 1.134.881 sensor, 798.722 notifications,
+  209 auth tokens, dan 36 threshold states.
+- Origin Cloudflare telah diarahkan ke `http://192.168.10.64:8000`.
+- Public `/docs` dan `/openapi.json` HTTP 200; smoke test Android untuk
+  `/tambak/`, `/devices/status/`, dan `/monitoring/?last_n=10` HTTP 200.
+- Setelah cutover, 31 row sensor alami baru masuk sampai ID `1136941`; seluruhnya
+  memiliki `assignment_id`. Tidak ada 5xx atau lonjakan notifikasi.
+- Background task hanya aktif di API baru dan container berstatus healthy.
+- SQLite-web lama tetap aktif sebagai pemeriksaan snapshot read-only; database
+  production aktif sekarang adalah PostgreSQL `aquanotes`.
+
+Observasi minimal 72 jam sebelum menghapus resource lama. Konversi
+`sensor_data` menjadi hypertable tetap dipisahkan dari cutover ini.
+
 ## 16. Tahap 1 assignment history (22 Agustus 2026)
 
 Perubahan ini dilakukan sebelum migrasi PostgreSQL/TimescaleDB agar histori

@@ -9,6 +9,7 @@ __pycache__/
 !.env.example
 *.db
 *.db-*
+*.db.gz
 *.sqlite
 *.sqlite3
 
