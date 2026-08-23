@@ -402,6 +402,33 @@ Audit + rotasi secret
   → cutover database terpisah
 ```
 
+## 17. Tahap 2 - rehearsal PostgreSQL/TimescaleDB (23 Agustus 2026)
+
+Service SQLite production tetap aktif selama seluruh pekerjaan ini.
+
+- Target database: `db-timescale-01` (`192.168.10.65` / Tailscale
+  `100.97.236.43`), PostgreSQL 17.10 dan TimescaleDB 2.29.1.
+- Target aplikasi: `docker-01` (`192.168.10.64` / Tailscale
+  `100.125.123.107`).
+- Snapshot online dibuat dengan SQLite Backup API; integrity `ok`, nol FK error.
+- SHA-256 snapshot rehearsal:
+  `b4c9985237931ad632456523f38215f173ef2846f9222037b867fa40112b54a5`.
+- Dua rehearsal berhasil dengan hasil identik: 15 users, 12 tambak, 31 devices,
+  19 kolam, 20 assignments, 1.134.712 sensor, 798.722 notifications,
+  209 auth tokens, dan 36 threshold states.
+- PostgreSQL memiliki nol orphan sensor-device, nol orphan sensor-assignment,
+  dan nol duplikasi assignment aktif.
+- API target healthy; OpenAPI, `/tambak/`, `/devices/status/`, dan
+  `/monitoring/?last_n=10` lulus HTTP 200 memakai token dari snapshot.
+- Background target dinonaktifkan agar tidak mengirim FCM ganda; Firebase Admin
+  dipasang sebagai secret volume read-only.
+- `sensor_data` masih tabel PostgreSQL reguler. Konversi hypertable tidak
+  digabungkan dengan cutover database pertama.
+
+Belum cutover: snapshot rehearsal akan tertinggal selama production lama terus
+menerima write. Cutover memerlukan backup dan import final dalam window write
+singkat setelah seluruh gate disetujui.
+
 ## 16. Tahap 1 assignment history (22 Agustus 2026)
 
 Perubahan ini dilakukan sebelum migrasi PostgreSQL/TimescaleDB agar histori

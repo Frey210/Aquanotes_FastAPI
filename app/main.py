@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import os
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import (
     admin,
@@ -13,7 +14,7 @@ from app.routers import (
     notifications
 )
 from app.background_tasks import start_background_task
-from app.database import engine, Base
+from app.database import engine, Base, IS_SQLITE
 import sqlite3
 import logging
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -48,9 +49,11 @@ app.include_router(notifications.router)
 
 # PERBAIKAN: Fungsi untuk migrasi kolom baru
 def migrate_database():
+    if not IS_SQLITE:
+        return
     try:
         # Cek apakah kolom sudah ada
-        conn = sqlite3.connect('aquanotes.db', timeout=30)
+        conn = sqlite3.connect(engine.url.database, timeout=30)
         cursor = conn.cursor()
         
         # Cek tabel devices
@@ -86,5 +89,6 @@ async def startup_event():
     Base.metadata.create_all(bind=engine)
     
     # Jalankan background tasks
-    start_background_task()
+    if os.getenv("START_BACKGROUND_TASKS", "true").lower() in {"1", "true", "yes"}:
+        start_background_task()
     logger.info("Application startup complete")

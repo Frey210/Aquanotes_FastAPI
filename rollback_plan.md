@@ -141,6 +141,16 @@ Rollback ini mengaktifkan kembali key yang pernah terekspos di Git publik dan ha
 - Data sebelum dan selama window migrasi telah direkonsiliasi.
 - Bukti hash, count, timestamp, dan log disimpan.
 
+## Rollback Tahap 2 PostgreSQL (23 Agustus 2026)
+
+Selama rehearsal tidak diperlukan rollback production karena Cloudflare dan
+service lama tidak diubah. Jika API target gagal, hentikan hanya stack `stage2`
+di `docker-01`; production SQLite tetap menjadi sumber kebenaran.
+
+Pada cutover final, jangan hapus SQLite final. Rollback dilakukan dengan
+mengembalikan origin Cloudflare ke API lama, lalu rekonsiliasi setiap write yang
+sempat diterima PostgreSQL setelah cutoff sebelum mengaktifkan write lama kembali.
+
 ## Rollback khusus assignment history (22 Agustus 2026)
 
 Backup rehearsal/baseline pertama:

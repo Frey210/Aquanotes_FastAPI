@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta  # PERBAIKAN: Tambahkan import datetime
 from sqlalchemy import or_, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session
 from app import models
 from app.database import SessionLocal
@@ -25,6 +26,9 @@ THRESHOLD_FIELDS = (
     ('salinitas', 'max', 'salinitas_max_threshold'),
 )
 
+def _alert_state_insert(db):
+    return postgresql_insert if db.get_bind().dialect.name == 'postgresql' else sqlite_insert
+
 def _is_threshold_breached(current_value, threshold_type, threshold):
     return (threshold_type == 'min' and current_value < threshold) or \
            (threshold_type == 'max' and current_value > threshold)
@@ -33,7 +37,7 @@ def _claim_threshold_alert(db, device_id, parameter, threshold_type, threshold, 
     """Return True exactly once when an alert changes from inactive to active."""
     now = datetime.utcnow()
     db.execute(
-        sqlite_insert(models.ThresholdAlertState).values(
+        _alert_state_insert(db)(models.ThresholdAlertState).values(
             device_id=device_id,
             parameter=parameter,
             threshold_type=threshold_type,
@@ -95,7 +99,7 @@ def _seed_threshold_alert_states(db):
                 continue
 
             db.execute(
-                sqlite_insert(models.ThresholdAlertState).values(
+                _alert_state_insert(db)(models.ThresholdAlertState).values(
                     device_id=device.id,
                     parameter=parameter,
                     threshold_type=threshold_type,
