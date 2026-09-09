@@ -10,6 +10,7 @@ from app import models
 from app.database import SessionLocal
 from app.firebase_service import send_fcm_notification
 from app.assignments import get_active_assignment
+from app.device_state import apply_scheduled_deactivation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -205,7 +206,8 @@ def check_device_status():
             
             devices = db.query(models.Device).all()
             for device in devices:
-                if device.status == 'maintenance':
+                apply_scheduled_deactivation(device, now)
+                if device.status in {'maintenance', 'inactive'}:
                     continue
                 
                 # PERBAIKAN: Handle None untuk last_seen

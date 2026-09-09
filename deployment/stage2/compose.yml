@@ -11,7 +11,18 @@ services:
     ports:
       - "192.168.10.64:8000:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 6
+
+  web:
+    image: ${WEB_IMAGE:-aquanotes-web:20260905-users}
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "192.168.10.64:8080:80"

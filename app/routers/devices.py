@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.auth import get_current_user
 from app.assignments import replace_active_assignment
+from app.device_state import operational_mode
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 logger = logging.getLogger(__name__)
@@ -258,7 +259,7 @@ def get_devices_status(
     }
     
     for device in devices:
-        status_count[device.status] += 1
+        status_count[device.status if device.status in status_count else 'offline'] += 1
     
     return {
         'online': status_count['online'],
@@ -284,7 +285,16 @@ def set_maintenance_mode(
             detail="Device not found"
         )
     
+    if operational_mode(device) == "inactive":
+        raise HTTPException(status_code=409, detail="Device dinonaktifkan oleh administrator")
+
     device.status = 'maintenance'
+    active_request = db.query(models.MaintenanceRequest).filter(
+        models.MaintenanceRequest.device_id == device.id,
+        models.MaintenanceRequest.status.in_(("requested", "in_progress")),
+    ).first()
+    if not active_request:
+        db.add(models.MaintenanceRequest(device_id=device.id, user_id=current_user.id))
     db.commit()
     return None
 
@@ -305,8 +315,15 @@ def set_online_mode(
             detail="Device not found"
         )
     
+    if operational_mode(device) == "inactive":
+        raise HTTPException(status_code=403, detail="Device hanya dapat diaktifkan kembali oleh administrator")
+
     device.status = 'online'
     device.last_seen = datetime.utcnow()
+    db.query(models.MaintenanceRequest).filter(
+        models.MaintenanceRequest.device_id == device.id,
+        models.MaintenanceRequest.status.in_(("requested", "in_progress")),
+    ).update({"status": "cancelled"}, synchronize_session=False)
     db.commit()
     return None
 

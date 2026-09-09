@@ -61,3 +61,14 @@ def get_current_user(
     except Exception as e:
         print(f"Authentication error: {str(e)}")
         raise credentials_exception
+
+
+def require_admin(
+    current_user: models.User = Depends(get_current_user),
+) -> models.User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return current_user

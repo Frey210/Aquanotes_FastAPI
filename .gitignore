@@ -19,7 +19,14 @@ __pycache__/
 /migration_deployment.md
 /.migration_staging/
 /deployment/**/secrets/
+/secrets/
 /app/firebase/*.json
 
 # Generated codebase analysis
 /graphify-out/
+
+# Local development artifacts
+/.codex-tmp-*/
+/*.code-workspace
+*.log
+/deployment/evidence/

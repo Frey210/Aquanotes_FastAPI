@@ -13,4 +13,5 @@ current_production_detail.txt
 migration_deployment.md
 .migration_staging/
 deployment/**/secrets/
+secrets/
 graphify-out/

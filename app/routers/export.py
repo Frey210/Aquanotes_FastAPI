@@ -7,6 +7,7 @@ import io
 from app import models, database
 from app.schemas import ExportRequest
 from app.auth import get_current_user
+from app.timezones import tambak_time_to_utc, utc_to_tambak_time
 
 router = APIRouter(prefix="/export", tags=["Export Data"])
 
@@ -23,12 +24,19 @@ def export_to_csv(
             detail="Start date must be before end date"
         )
 
+    tambak = db.query(models.Tambak).join(models.Kolam).filter(
+        models.Kolam.device_id == request.device_id,
+        models.Tambak.user_id == current_user.id,
+    ).first()
+    start_utc = tambak_time_to_utc(datetime.combine(request.start_date, datetime.min.time()), tambak)
+    end_utc = tambak_time_to_utc(datetime.combine(request.end_date, datetime.max.time()), tambak)
+
     # Query data
     sensor_data = db.query(models.SensorData).join(models.DeviceAssignment).filter(
         models.SensorData.device_id == request.device_id,
         models.DeviceAssignment.user_id == current_user.id,
-        models.SensorData.timestamp >= datetime.combine(request.start_date, datetime.min.time()),
-        models.SensorData.timestamp <= datetime.combine(request.end_date, datetime.max.time())
+        models.SensorData.timestamp >= start_utc,
+        models.SensorData.timestamp <= end_utc,
     ).order_by(models.SensorData.timestamp).all()
 
     if not sensor_data:
@@ -48,7 +56,7 @@ def export_to_csv(
     # Rows
     for data in sensor_data:
         writer.writerow([
-            data.timestamp.isoformat(),
+            utc_to_tambak_time(data.timestamp, tambak).isoformat(),
             data.suhu,
             data.ph,
             data.do,

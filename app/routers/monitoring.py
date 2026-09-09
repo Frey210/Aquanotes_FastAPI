@@ -5,6 +5,7 @@ from typing import Optional
 import logging
 from app import models, schemas, database, auth
 from app.assignments import get_active_assignment
+from app.timezones import utc_to_tambak_time
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def get_monitoring(
                         tds=latest.tds,
                         ammonia=latest.ammonia,
                         salinitas=latest.salinitas,
-                        timestamp=latest.timestamp
+                        timestamp=utc_to_tambak_time(latest.timestamp, kolam.tambak)
                     )
                 
                 # Format historical data
@@ -75,7 +76,7 @@ def get_monitoring(
                         tds=data.tds,
                         ammonia=data.ammonia,
                         salinitas=data.salinitas,
-                        timestamp=data.timestamp
+                        timestamp=utc_to_tambak_time(data.timestamp, kolam.tambak)
                     ) for data in historical
                 ]
                 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index, text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index, Text, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -10,6 +10,8 @@ class User(Base):
     name = Column(String(100), nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="user", server_default="user")
+    email_verified = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(DateTime, default=datetime.utcnow)
     fcm_token = Column(String(255), nullable=True)
     
@@ -25,6 +27,20 @@ class AuthToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
     
+    user = relationship("User")
+
+
+class EmailToken(Base):
+    __tablename__ = "email_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    purpose = Column(String(20), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
     user = relationship("User")
 
 class Tambak(Base):
@@ -65,8 +81,9 @@ class Device(Base):
     
     # Status monitoring
     last_seen = Column(DateTime)  # Timestamp terakhir komunikasi
-    status = Column(String(10), default='offline')  # 'online', 'offline', 'maintenance'
+    status = Column(String(20), default='offline')  # online, offline, maintenance, inactive
     connection_interval = Column(Integer, default=5)  # Dalam menit
+    deactivation_scheduled_at = Column(DateTime, nullable=True)
     
     owner = relationship("User", back_populates="devices")
     kolam = relationship("Kolam", back_populates="device", uselist=False)
@@ -165,3 +182,30 @@ class ThresholdAlertState(Base):
     threshold_value = Column(Float, nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(100), nullable=False)
+    entity_type = Column(String(50), nullable=False)
+    entity_id = Column(String(100), nullable=False)
+    before_json = Column(Text, nullable=True)
+    after_json = Column(Text, nullable=True)
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class MaintenanceRequest(Base):
+    __tablename__ = "maintenance_requests"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(20), nullable=False, default="requested")
+    technician_name = Column(String(100), nullable=True)
+    admin_note = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

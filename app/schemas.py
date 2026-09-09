@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, validator
-from typing import Optional, List, Union
+from typing import Any, Optional, List, Union, Literal
 from datetime import datetime, date
 
 class UserCreate(BaseModel):
@@ -11,6 +11,22 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailTokenConfirm(BaseModel):
+    token: str = Field(..., min_length=32)
+
+
+class PasswordResetConfirm(EmailTokenConfirm):
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
 class UserResponse(BaseModel):
     id: int
     name: str
@@ -21,6 +37,15 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class UserSessionResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: Literal["user", "admin"]
+
+    model_config = ConfigDict(from_attributes=True)
 
 class DeviceRegister(BaseModel):
     uid: str
@@ -93,9 +118,9 @@ class SensorDataCreate(BaseModel):
     ph: float
     do: float
     tds: float
-    ammonia: float
+    ammonia: Optional[float] = None
     salinitas: float
-    timestamp: str = Field(..., description="Timestamp dalam format ISO 8601 dari device (contoh: 2025-07-18T06:00:00+08:00)")
+    timestamp: Any = Field(None, description="Field legacy opsional; waktu sensor ditetapkan oleh server")
 
 class SensorDataResponse(BaseModel):
     id: int
@@ -105,7 +130,7 @@ class SensorDataResponse(BaseModel):
     ph: float
     do: float
     tds: float
-    ammonia: float
+    ammonia: Optional[float] = None
     salinitas: float
     
     class Config:
@@ -145,6 +170,114 @@ class AdminDeviceResponse(BaseModel):
     registered: bool
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminSummaryResponse(BaseModel):
+    total: int
+    online: int
+    stale: int
+    offline: int
+    never_seen: int
+    maintenance: int
+    inactive: int
+    scheduled_deactivation: int
+    pending_maintenance: int
+    unassigned: int
+    active_alerts: int
+
+
+class AdminFleetDeviceResponse(BaseModel):
+    id: int
+    uid: str
+    name: Optional[str] = None
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    tambak_name: Optional[str] = None
+    kolam_name: Optional[str] = None
+    connectivity_status: Literal["online", "stale", "offline", "never_seen"]
+    operational_mode: Literal["active", "maintenance", "inactive"]
+    last_seen: Optional[datetime] = None
+    connection_interval: int
+    deactivation_scheduled_at: Optional[datetime] = None
+
+
+class AdminFleetDevicePage(BaseModel):
+    items: List[AdminFleetDeviceResponse]
+    page: int
+    page_size: int
+    total: int
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: Literal["user", "admin"]
+    email_verified: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+    device_count: int
+    tambak_count: int
+
+
+class AdminUserPage(BaseModel):
+    items: List[AdminUserResponse]
+    page: int
+    page_size: int
+    total: int
+    all_users: int
+    verified: int
+    unverified: int
+
+
+class AdminDeviceUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    connection_interval: Optional[int] = Field(None, ge=1, le=60)
+    operational_mode: Optional[Literal["active", "maintenance", "inactive"]] = None
+    deactivation_scheduled_at: Optional[datetime] = None
+    reason: Optional[str] = Field(None, max_length=255)
+
+
+class AdminParameterSummary(BaseModel):
+    parameter: Literal["suhu", "ph", "do", "tds", "ammonia", "salinitas"]
+    label: str
+    unit: str
+    devices_with_data: int
+    devices_with_limits: int
+    needs_attention: int
+    average: Optional[float] = None
+    minimum: Optional[float] = None
+    maximum: Optional[float] = None
+
+
+class AdminSensorDeviceResponse(AdminFleetDeviceResponse):
+    latest_data: Optional[SensorDataSummary] = None
+    historical_data: List[SensorDataSummary] = []
+    attention_parameters: List[str] = []
+
+
+class AdminSensorOverviewResponse(BaseModel):
+    generated_at: datetime
+    parameters: List[AdminParameterSummary]
+    devices: List[AdminSensorDeviceResponse]
+
+
+class MaintenanceRequestResponse(BaseModel):
+    id: int
+    device_id: int
+    device_name: str
+    user_name: str
+    status: Literal["requested", "in_progress", "completed", "cancelled"]
+    technician_name: Optional[str] = None
+    admin_note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MaintenanceRequestUpdate(BaseModel):
+    status: Literal["in_progress", "completed", "cancelled"]
+    technician_name: Optional[str] = Field(None, max_length=100)
+    admin_note: Optional[str] = Field(None, max_length=255)
 
 class ThresholdSettings(BaseModel):
     temp_min: Optional[float] = Field(None, ge=0, description="Minimum temperature threshold in °C")
