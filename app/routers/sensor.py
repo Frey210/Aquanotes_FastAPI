@@ -4,8 +4,7 @@ from copy import copy
 from datetime import datetime
 from app import models, schemas, database
 from typing import List, Optional
-from app.assignments import get_active_assignment
-from app.device_state import apply_scheduled_deactivation
+from app.sensor_ingestion import ingest_sensor_data
 from app.timezones import utc_to_tambak_time
 
 router = APIRouter(prefix="/sensor", tags=["Sensor Data"])
@@ -15,56 +14,7 @@ def create_sensor_data(
     data: schemas.SensorDataCreate,
     db: Session = Depends(database.get_db)
 ):
-    device = db.query(models.Device).filter(
-        models.Device.uid == data.uid
-    ).first()
-    
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    received_at = datetime.utcnow()
-    device_timestamp = received_at
-
-    scheduled_applied = apply_scheduled_deactivation(device)
-    if device.status in {"maintenance", "inactive"}:
-        if scheduled_applied:
-            db.commit()
-        # Preserve the deployed IoT 200/response contract while intentionally not storing the reading.
-        return schemas.SensorDataResponse(
-            id=0,
-            device_id=device.id,
-            timestamp=device_timestamp,
-            suhu=data.suhu,
-            ph=data.ph,
-            do=data.do,
-            tds=data.tds,
-            ammonia=data.ammonia,
-            salinitas=data.salinitas,
-        )
-    
-    # Update device status and last seen
-    device.last_seen = received_at
-    device.status = 'online'
-    db.add(device)
-    
-    assignment = get_active_assignment(db, device.id)
-    sensor_data = models.SensorData(
-        device_id=device.id,
-        assignment_id=assignment.id if assignment else None,
-        timestamp=device_timestamp,
-        suhu=data.suhu,
-        ph=data.ph,
-        do=data.do,
-        tds=data.tds,
-        ammonia=data.ammonia,
-        salinitas=data.salinitas
-    )
-    
-    db.add(sensor_data)
-    db.commit()
-    db.refresh(sensor_data)
-    
-    return sensor_data
+    return ingest_sensor_data(data, db)
 
 from fastapi import Depends, HTTPException, status
 from app.auth import get_current_user

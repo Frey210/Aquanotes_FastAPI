@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import logging
 from app import models, schemas, database, auth
 from app.assignments import get_active_assignment
-from app.timezones import utc_to_tambak_time
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 logger = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ def get_monitoring(
                         tds=latest.tds,
                         ammonia=latest.ammonia,
                         salinitas=latest.salinitas,
-                        timestamp=utc_to_tambak_time(latest.timestamp, kolam.tambak)
+                        timestamp=latest.timestamp.replace(tzinfo=timezone.utc)
                     )
                 
                 # Format historical data
@@ -76,7 +75,7 @@ def get_monitoring(
                         tds=data.tds,
                         ammonia=data.ammonia,
                         salinitas=data.salinitas,
-                        timestamp=utc_to_tambak_time(data.timestamp, kolam.tambak)
+                        timestamp=data.timestamp.replace(tzinfo=timezone.utc)
                     ) for data in historical
                 ]
                 

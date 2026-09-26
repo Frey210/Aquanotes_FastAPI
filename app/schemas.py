@@ -114,24 +114,24 @@ class KolamResponse(BaseModel):
 
 class SensorDataCreate(BaseModel):
     uid: str
-    suhu: float
-    ph: float
-    do: float
-    tds: float
+    suhu: Optional[float] = None
+    ph: Optional[float] = None
+    do: Optional[float] = None
+    tds: Optional[float] = None
     ammonia: Optional[float] = None
-    salinitas: float
+    salinitas: Optional[float] = None
     timestamp: Any = Field(None, description="Field legacy opsional; waktu sensor ditetapkan oleh server")
 
 class SensorDataResponse(BaseModel):
     id: int
     device_id: int
     timestamp: datetime
-    suhu: float
-    ph: float
-    do: float
-    tds: float
+    suhu: Optional[float] = None
+    ph: Optional[float] = None
+    do: Optional[float] = None
+    tds: Optional[float] = None
     ammonia: Optional[float] = None
-    salinitas: float
+    salinitas: Optional[float] = None
     
     class Config:
         from_attributes = True

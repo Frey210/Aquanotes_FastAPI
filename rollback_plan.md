@@ -198,3 +198,60 @@ Kriteria rollback:
 - Token mobile lama, `/monitoring`, atau endpoint utama menghasilkan 5xx.
 - Row count berkurang, integrity/FK check gagal, atau terjadi mismatch assignment.
 - `database is locked` berulang melewati timeout 30 detik.
+
+## Rollback nullable sensor (25 September 2026)
+
+Deployment backend nullable sensor selesai pada `2026-09-25T06:28:58Z` tanpa
+migrasi schema database. Image production baru:
+`sha256:6443dd6f551da605ba7af2f2dd60b8a279174137a0a0ac42a79a89985d3914d0`.
+
+Artefak rollback:
+
+- Dump PostgreSQL: `/var/backups/aquanotes/aquanotes-before-nullable-sensors-20260925T062644Z.dump`
+- SHA-256 dump: `a911f4b8ec70681d10e4d1442e22965ee4c7e34d2648ac691dc6e5826cf5daaa`
+- Source lama: `/srv/aquanotes-stage2/backups/nullable-sensors-20260925T062719Z/source`
+- Image lama: `sha256:2c89c5eca03b989054a77ccfd698b36542286f69636452325bc13d85582bb122`
+- Tag rollback: `stage2-api:pre-nullable-20260925T062719Z`
+
+Rollback aplikasi tidak memerlukan restore database:
+
+```bash
+cd /srv/aquanotes-stage2/release-20260827
+docker image tag stage2-api:pre-nullable-20260925T062719Z stage2-api:latest
+docker compose -f deployment/stage2/compose.yml up -d --force-recreate --no-deps api
+```
+
+Setelah rollback, tunggu container healthy lalu verifikasi `/health`,
+`/openapi.json`, payload sensor lama, monitoring mobile, dan log HTTP 5xx.
+Jangan restore dump PostgreSQL kecuali ditemukan kerusakan data; deployment ini
+tidak mengubah schema dan smoke row `1184160` serta `1184161` sudah dihapus.
+
+## Rollback Mosquitto dan dual-ingestion (26 September 2026)
+
+Production MQTT berjalan pada LXC `192.168.10.66` dengan Mosquitto. EMQX tetap
+terpasang tetapi disabled. Backup konfigurasi EMQX berada di:
+
+- `/srv/mosquitto-migration/backup-20260926/emqx-config.tgz`
+
+Rollback broker:
+
+```bash
+sudo sh /tmp/rollback.sh
+```
+
+Perintah tersebut menghentikan Mosquitto, menghapus include konfigurasi aktif,
+kemudian mengaktifkan EMQX kembali. Verifikasi port 1883, 8883, 8083, 8084,
+dan 18083 sebelum mengalihkan origin Cloudflare.
+
+Rollback backend tanpa restore database:
+
+```bash
+cd /srv/aquanotes-stage2/release-20260827
+docker image tag stage2-api:pre-mqtt-20260926 stage2-api:latest
+docker compose -p stage2 -f deployment/stage2/compose.yml up -d --force-recreate --no-deps api
+```
+
+Tabel `mqtt_ingest_receipts` boleh dibiarkan karena backend lama mengabaikannya.
+Jangan menghapus data sensor atau restore dump PostgreSQL hanya untuk rollback
+consumer MQTT. Endpoint HTTPS `/sensor/` tetap menjadi jalur kompatibilitas
+firmware lama selama dan setelah rollback.

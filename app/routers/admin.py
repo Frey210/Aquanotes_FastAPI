@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app import models, schemas, database
 from app.auth import require_admin
 from app.device_state import operational_mode, utc_naive
-from app.timezones import tambak_timezone
+from app.assignments import replace_active_assignment
 from typing import List
 
 router = APIRouter(prefix="/admin", tags=["Administrator"])
@@ -325,6 +325,32 @@ def update_fleet_device(
     return _fleet_device(device)
 
 
+@router.post("/fleet/devices/{device_id}/unassign", response_model=schemas.AdminFleetDeviceResponse)
+def unassign_fleet_device(
+    device_id: int,
+    actor: models.User = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    device = db.get(models.Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    before = _fleet_device(device)
+    if device.kolam:
+        device.kolam.device_id = None
+    device.user_id = None
+    replace_active_assignment(db, device)
+    device.name = None
+    device.status = "offline"
+    device.last_seen = None
+    device.connection_interval = 5
+    device.deactivation_scheduled_at = None
+    db.flush()
+    _audit(db, actor, "device.unassign", device, before, _fleet_device(device), "Penyandingan dilepas oleh admin")
+    db.commit()
+    db.refresh(device)
+    return _fleet_device(device)
+
+
 _PARAMETERS = (
     ("suhu", "Suhu", "°C", "temp_min_threshold", "temp_max_threshold"),
     ("ph", "pH", "", "ph_min_threshold", "ph_max_threshold"),
@@ -349,7 +375,7 @@ def _sensor_values(reading: models.SensorData | None, tambak=None) -> dict | Non
         return None
     timestamp = reading.timestamp.replace(tzinfo=timezone.utc) if reading.timestamp.tzinfo is None else reading.timestamp.astimezone(timezone.utc)
     return {key: getattr(reading, key) for key, *_ in _PARAMETERS} | {
-        "timestamp": timestamp.astimezone(tambak_timezone(tambak))
+        "timestamp": timestamp
     }
 
 

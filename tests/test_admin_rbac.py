@@ -51,7 +51,7 @@ class AdminRBACTest(unittest.TestCase):
         self.assertTrue(_outside_limit(device, "suhu", 32))
         self.assertFalse(_outside_limit(device, "suhu", 28))
 
-    def test_admin_sensor_timestamp_keeps_tambak_offset(self):
+    def test_admin_sensor_timestamp_is_utc_for_client_conversion(self):
         reading = models.SensorData(
             timestamp=datetime(2026, 9, 5, 10, 46, 13),
             suhu=31.8,
@@ -65,7 +65,7 @@ class AdminRBACTest(unittest.TestCase):
 
         timestamp = _sensor_values(reading, tambak)["timestamp"]
 
-        self.assertEqual(timestamp.isoformat(), "2026-09-05T18:46:13+08:00")
+        self.assertEqual(timestamp.isoformat(), "2026-09-05T10:46:13+00:00")
 
     def test_admin_user_list_exposes_only_safe_account_summary(self):
         engine = create_engine("sqlite:///:memory:")

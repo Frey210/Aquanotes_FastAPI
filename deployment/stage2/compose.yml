@@ -8,6 +8,7 @@ services:
       - ./secrets/app.env
     volumes:
       - ./secrets/firebase-admin.json:/app/app/firebase/aqua-notes-firebase-adminsdk-fbsvc-6de08d39b2.json:ro
+      - ./secrets/mqtt-ca.crt:/app/secrets/mqtt-ca.crt:ro
     ports:
       - "192.168.10.64:8000:8000"
     healthcheck:
@@ -17,7 +18,7 @@ services:
       retries: 6
 
   web:
-    image: ${WEB_IMAGE:-aquanotes-web:20260905-users}
+    image: ${WEB_IMAGE:-aquanotes-web:20260926-app-links}
     restart: unless-stopped
     environment:
       API_UPSTREAM: http://api:8000

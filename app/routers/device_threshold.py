@@ -4,6 +4,19 @@ from app import models, schemas, database, auth
 
 router = APIRouter(prefix="/devices", tags=["Device Thresholds"])
 
+def _threshold_values(device):
+    return {
+        "temp_min": device.temp_min_threshold,
+        "temp_max": device.temp_max_threshold,
+        "ph_min": device.ph_min_threshold,
+        "ph_max": device.ph_max_threshold,
+        "do_min": device.do_min_threshold,
+        "tds_max": device.tds_max_threshold,
+        "ammonia_max": device.ammonia_max_threshold,
+        "salinitas_min": device.salinitas_min_threshold,
+        "salinitas_max": device.salinitas_max_threshold,
+    }
+
 @router.put("/{device_id}/thresholds", 
            response_model=schemas.DeviceThresholdResponse,
            status_code=status.HTTP_200_OK)
@@ -37,7 +50,7 @@ def update_device_thresholds(
     return {
         "device_id": device.id,
         "device_name": device.name,
-        **thresholds.dict()
+        **_threshold_values(device)
     }
 
 @router.get("/{device_id}/thresholds",
@@ -58,21 +71,8 @@ def get_device_thresholds(
             detail="Device not found or not owned by user"
         )
     
-    # Extract threshold values
-    thresholds = {
-        "temp_min": device.temp_min_threshold,
-        "temp_max": device.temp_max_threshold,
-        "ph_min": device.ph_min_threshold,
-        "ph_max": device.ph_max_threshold,
-        "do_min": device.do_min_threshold,
-        "tds_max": device.tds_max_threshold,
-        "ammonia_max": device.ammonia_max_threshold,
-        "salinitas_min": device.salinitas_min_threshold,
-        "salinitas_max": device.salinitas_max_threshold
-    }
-    
     return {
         "device_id": device.id,
         "device_name": device.name,
-        **thresholds
+        **_threshold_values(device)
     }

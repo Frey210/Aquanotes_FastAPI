@@ -106,18 +106,15 @@ class AssignmentCompatibilityTest(unittest.TestCase):
         })
         self.assertIsNone(without_timestamp.timestamp)
 
-    def test_ammonia_is_optional_without_fabricating_zero(self):
+    def test_all_sensor_values_are_optional_without_fabricating_zero(self):
         payload = schemas.SensorDataCreate.model_validate({
             "uid": self.device.uid,
-            "suhu": 27,
-            "ph": 8,
-            "do": 6,
-            "tds": 100,
-            "salinitas": 20,
         })
         stored = sensor_router.create_sensor_data(payload, self.db)
-        self.assertIsNone(stored.ammonia)
-        self.assertIsNone(schemas.SensorDataResponse.model_validate(stored).ammonia)
+        response = schemas.SensorDataResponse.model_validate(stored)
+        for field in ("suhu", "ph", "do", "tds", "ammonia", "salinitas"):
+            self.assertIsNone(getattr(stored, field))
+            self.assertIsNone(getattr(response, field))
 
     def test_sensor_time_is_displayed_in_tambak_timezone(self):
         utc_value = datetime(2026, 9, 5, 4, 0)

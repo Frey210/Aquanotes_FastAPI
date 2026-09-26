@@ -14,6 +14,7 @@ from app.routers import (
     notifications
 )
 from app.background_tasks import start_background_task
+from app.mqtt_consumer import start_mqtt_consumer, stop_mqtt_consumer
 from app.database import engine, Base, IS_SQLITE
 from sqlalchemy import inspect, text
 import sqlite3
@@ -148,4 +149,10 @@ async def startup_event():
     # Jalankan background tasks
     if os.getenv("START_BACKGROUND_TASKS", "true").lower() in {"1", "true", "yes"}:
         start_background_task()
+    start_mqtt_consumer()
     logger.info("Application startup complete")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_mqtt_consumer()

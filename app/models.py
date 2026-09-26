@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index, Text, text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Index, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -154,6 +154,22 @@ class DeviceAssignment(Base):
             sqlite_where=text('ended_at IS NULL'),
             postgresql_where=text('ended_at IS NULL'),
         ),
+    )
+
+
+class MqttIngestReceipt(Base):
+    __tablename__ = "mqtt_ingest_receipts"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    message_id = Column(String(128), nullable=False)
+    sensor_data_id = Column(Integer, ForeignKey("sensor_data.id", ondelete="CASCADE"), nullable=True)
+    received_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    sensor_data = relationship("SensorData")
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "message_id", name="uq_mqtt_receipt_device_message"),
     )
 
 class Notification(Base):
