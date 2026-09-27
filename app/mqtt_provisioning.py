@@ -16,7 +16,7 @@ def provision_device(uid: str) -> dict[str, str]:
 
     password = secrets.token_urlsafe(32)
     host = os.environ["MQTT_PROVISIONING_HOST"]
-    user = os.getenv("MQTT_PROVISIONING_USER", "root")
+    user = os.getenv("MQTT_PROVISIONING_USER", "emqxadmin")
     key = os.getenv("MQTT_PROVISIONING_KEY", "/run/secrets/mqtt-provisioner-key")
     known_hosts = os.getenv("MQTT_PROVISIONING_KNOWN_HOSTS", "/run/secrets/mqtt-known-hosts")
     port = os.getenv("MQTT_PROVISIONING_PORT", "22")

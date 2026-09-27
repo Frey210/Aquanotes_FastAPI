@@ -1,0 +1,2 @@
+#!/bin/sh
+{ printf '%s\n' "${SSH_ORIGINAL_COMMAND:-}"; cat; } | sudo -n /usr/local/sbin/aquanotes-mqtt-provision

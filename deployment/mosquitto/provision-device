@@ -1,7 +1,10 @@
 #!/bin/sh
 set -eu
 
-set -- ${SSH_ORIGINAL_COMMAND:-}
+if [ "$#" -eq 0 ]; then
+  IFS= read -r requested_command
+  set -- $requested_command
+fi
 [ "$#" -eq 2 ] && [ "$1" = "upsert" ] || exit 64
 uid=$2
 case "$uid" in *[!A-Za-z0-9_-]*|'') exit 64;; esac
@@ -11,7 +14,7 @@ IFS= read -r password
 [ "${#password}" -ge 32 ] || exit 64
 flock /run/aquanotes-mqtt-provision.lock \
   mosquitto_passwd -b /etc/mosquitto/aquanotes/passwords "$uid" "$password"
-chown root:mosquitto /etc/mosquitto/aquanotes/passwords
-chmod 640 /etc/mosquitto/aquanotes/passwords
+chown root:root /etc/mosquitto/aquanotes/passwords
+chmod 600 /etc/mosquitto/aquanotes/passwords
 systemctl reload mosquitto
 printf 'ok\n'
