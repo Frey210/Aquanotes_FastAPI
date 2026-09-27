@@ -199,6 +199,12 @@ class AdminFleetDeviceResponse(BaseModel):
     last_seen: Optional[datetime] = None
     connection_interval: int
     deactivation_scheduled_at: Optional[datetime] = None
+    mqtt_credential_status: Literal["unprovisioned", "ready", "active", "error"]
+
+
+class AdminMqttCredentialResponse(AdminFleetDeviceResponse):
+    mqtt_password: str
+    secrets_h: str
 
 
 class AdminFleetDevicePage(BaseModel):

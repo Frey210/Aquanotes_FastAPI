@@ -9,6 +9,7 @@ from app import models, schemas, database
 from app.auth import require_admin
 from app.device_state import operational_mode, utc_naive
 from app.assignments import replace_active_assignment
+from app.mqtt_provisioning import MqttProvisioningError, provision_device
 from typing import List
 
 router = APIRouter(prefix="/admin", tags=["Administrator"])
@@ -123,6 +124,7 @@ def _fleet_device(device: models.Device) -> dict:
         "last_seen": device.last_seen,
         "connection_interval": device.connection_interval or 5,
         "deactivation_scheduled_at": device.deactivation_scheduled_at,
+        "mqtt_credential_status": device.mqtt_credential_status or "unprovisioned",
     }
 
 
@@ -257,7 +259,7 @@ def admin_users(
     }
 
 
-@router.post("/fleet/devices", response_model=schemas.AdminFleetDeviceResponse, status_code=201)
+@router.post("/fleet/devices", response_model=schemas.AdminMqttCredentialResponse, status_code=201)
 def create_fleet_device(
     payload: schemas.DeviceRegister,
     actor: models.User = Depends(require_admin),
@@ -272,7 +274,37 @@ def create_fleet_device(
     _audit(db, actor, "device.create", device, None, {"uid": device.uid})
     db.commit()
     db.refresh(device)
-    return _fleet_device(device)
+    return _provision_mqtt(device, actor, db)
+
+
+@router.post("/fleet/devices/{device_id}/mqtt-credential", response_model=schemas.AdminMqttCredentialResponse)
+def provision_fleet_device_mqtt(
+    device_id: int,
+    actor: models.User = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    device = db.get(models.Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return _provision_mqtt(device, actor, db)
+
+
+def _provision_mqtt(device: models.Device, actor: models.User, db: Session) -> dict:
+    try:
+        credential = provision_device(device.uid)
+    except MqttProvisioningError as exc:
+        device.mqtt_credential_status = "error"
+        device.mqtt_credential_updated_at = datetime.utcnow()
+        _audit(db, actor, "device.mqtt.error", device, None, {"uid": device.uid})
+        db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    device.mqtt_credential_status = "ready"
+    device.mqtt_credential_updated_at = datetime.utcnow()
+    _audit(db, actor, "device.mqtt.provision", device, None, {"uid": device.uid, "status": "ready"})
+    db.commit()
+    db.refresh(device)
+    return _fleet_device(device) | credential
 
 
 @router.get("/fleet/devices/{device_id}", response_model=schemas.AdminFleetDeviceResponse)

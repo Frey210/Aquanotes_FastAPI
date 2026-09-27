@@ -85,6 +85,21 @@ def migrate_database():
                 with engine.begin() as connection:
                     connection.exec_driver_sql("ALTER TABLE devices ADD COLUMN deactivation_scheduled_at TIMESTAMP")
                 logger.info("Added column: devices.deactivation_scheduled_at")
+            if "mqtt_credential_status" not in columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE devices ADD COLUMN mqtt_credential_status VARCHAR(20) NOT NULL DEFAULT 'unprovisioned'"
+                    )
+                logger.info("Added column: devices.mqtt_credential_status")
+            if "mqtt_credential_updated_at" not in columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql("ALTER TABLE devices ADD COLUMN mqtt_credential_updated_at TIMESTAMP")
+                logger.info("Added column: devices.mqtt_credential_updated_at")
+            with engine.begin() as connection:
+                connection.exec_driver_sql(
+                    "UPDATE devices SET mqtt_credential_status='active', mqtt_credential_updated_at=CURRENT_TIMESTAMP "
+                    "WHERE uid='AER2023AQ0029' AND mqtt_credential_status='unprovisioned'"
+                )
             status_column = next((column for column in device_columns if column["name"] == "status"), None)
             status_length = getattr(status_column["type"], "length", None) if status_column else None
             if status_length is not None and status_length < 20:
@@ -130,6 +145,19 @@ def migrate_database():
         if 'deactivation_scheduled_at' not in columns:
             cursor.execute("ALTER TABLE devices ADD COLUMN deactivation_scheduled_at DATETIME")
             logger.info("Added column: deactivation_scheduled_at")
+
+        if 'mqtt_credential_status' not in columns:
+            cursor.execute("ALTER TABLE devices ADD COLUMN mqtt_credential_status VARCHAR(20) NOT NULL DEFAULT 'unprovisioned'")
+            logger.info("Added column: mqtt_credential_status")
+
+        if 'mqtt_credential_updated_at' not in columns:
+            cursor.execute("ALTER TABLE devices ADD COLUMN mqtt_credential_updated_at DATETIME")
+            logger.info("Added column: mqtt_credential_updated_at")
+
+        cursor.execute(
+            "UPDATE devices SET mqtt_credential_status='active', mqtt_credential_updated_at=CURRENT_TIMESTAMP "
+            "WHERE uid='AER2023AQ0029' AND mqtt_credential_status='unprovisioned'"
+        )
         
         conn.commit()
         conn.close()

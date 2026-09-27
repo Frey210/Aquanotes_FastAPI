@@ -84,6 +84,8 @@ class Device(Base):
     status = Column(String(20), default='offline')  # online, offline, maintenance, inactive
     connection_interval = Column(Integer, default=5)  # Dalam menit
     deactivation_scheduled_at = Column(DateTime, nullable=True)
+    mqtt_credential_status = Column(String(20), nullable=False, default="unprovisioned", server_default="unprovisioned")
+    mqtt_credential_updated_at = Column(DateTime, nullable=True)
     
     owner = relationship("User", back_populates="devices")
     kolam = relationship("Kolam", back_populates="device", uselist=False)

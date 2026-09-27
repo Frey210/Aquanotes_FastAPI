@@ -27,6 +27,9 @@ def ingest_sensor_data(
             return receipt.sensor_data or _unstored_response(device.id, data)
 
     received_at = datetime.utcnow()
+    if message_id and device.mqtt_credential_status != "active":
+        device.mqtt_credential_status = "active"
+        device.mqtt_credential_updated_at = received_at
     scheduled_applied = apply_scheduled_deactivation(device)
     if device.status in {"maintenance", "inactive"}:
         if message_id:
