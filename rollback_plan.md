@@ -255,3 +255,20 @@ Tabel `mqtt_ingest_receipts` boleh dibiarkan karena backend lama mengabaikannya.
 Jangan menghapus data sensor atau restore dump PostgreSQL hanya untuk rollback
 consumer MQTT. Endpoint HTTPS `/sensor/` tetap menjadi jalur kompatibilitas
 firmware lama selama dan setelah rollback.
+
+## Rollback provisioning credential MQTT (27 September 2026)
+
+Release sebelumnya tetap tersedia di
+`/srv/aquanotes-stage2/release-20260926-mqtt`. Untuk rollback aplikasi:
+
+```bash
+cd /srv/aquanotes-stage2/release-20260926-mqtt/deployment/stage2
+docker compose build api
+WEB_IMAGE=aquanotes-web:20260926-app-links docker compose up -d --no-deps api web
+```
+
+Kolom `mqtt_credential_status` dan `mqtt_credential_updated_at` bersifat aditif
+dan aman dibiarkan. Backup sebelum deployment tersedia di database host:
+`/var/backups/aquanotes/pre-mqtt-credentials-20260927.dump` dengan SHA-256
+`793554625361d9197d9e1647dc4ea6f5114744892b916cf6cb8f0b376d70f16a`.
+Restore database hanya jika validasi menunjukkan kerusakan data.
