@@ -14,7 +14,7 @@ IFS= read -r password
 [ "${#password}" -ge 32 ] || exit 64
 flock /run/aquanotes-mqtt-provision.lock \
   mosquitto_passwd -b /etc/mosquitto/aquanotes/passwords "$uid" "$password"
-chown root:root /etc/mosquitto/aquanotes/passwords
+chown mosquitto:mosquitto /etc/mosquitto/aquanotes/passwords
 chmod 600 /etc/mosquitto/aquanotes/passwords
 systemctl reload mosquitto
 printf 'ok\n'
