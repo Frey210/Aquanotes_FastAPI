@@ -8,7 +8,7 @@ class MqttProvisioningError(RuntimeError):
     pass
 
 
-def provision_device(uid: str) -> dict[str, str]:
+def provision_device(uid: str, power_profile: str = "portable") -> dict[str, str]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,35}", uid):
         raise MqttProvisioningError("UID device tidak valid untuk MQTT")
     if os.getenv("MQTT_PROVISIONING_ENABLED", "false").lower() not in {"1", "true", "yes"}:
@@ -34,5 +34,9 @@ def provision_device(uid: str) -> dict[str, str]:
 
     return {
         "mqtt_password": password,
-        "secrets_h": f'#pragma once\n\n#define DEVICE_UID "{uid}"\n#define MQTT_PASSWORD "{password}"\n',
+        "secrets_h": (
+            f'#pragma once\n\n#define DEVICE_UID "{uid}"\n'
+            f'#define MQTT_PASSWORD "{password}"\n'
+            f'#define DEVICE_POWER_SOURCE_PANEL {1 if power_profile == "panel" else 0}\n'
+        ),
     }

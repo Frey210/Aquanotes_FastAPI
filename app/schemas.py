@@ -49,6 +49,7 @@ class UserSessionResponse(BaseModel):
 
 class DeviceRegister(BaseModel):
     uid: str
+    power_profile: Literal["portable", "panel"] = "portable"
 
 class DeviceCreate(BaseModel):
     uid: str
@@ -200,11 +201,85 @@ class AdminFleetDeviceResponse(BaseModel):
     connection_interval: int
     deactivation_scheduled_at: Optional[datetime] = None
     mqtt_credential_status: Literal["unprovisioned", "ready", "active", "error"]
+    current_firmware_version: Optional[str] = None
+    power_profile: Literal["portable", "panel"]
 
 
 class AdminMqttCredentialResponse(AdminFleetDeviceResponse):
     mqtt_password: str
     secrets_h: str
+
+
+OtaReleaseStatus = Literal["draft", "ready", "retired"]
+OtaAssignmentState = Literal[
+    "assigned", "deferred", "downloading", "downloaded", "rebooting",
+    "pending_verify", "success", "failed", "rolled_back", "cancelled",
+]
+
+
+class FirmwareReleaseCreate(BaseModel):
+    version: str = Field(..., min_length=5, max_length=64)
+    release_notes: Optional[str] = Field(None, max_length=5000)
+
+
+class FirmwareReleaseResponse(BaseModel):
+    id: int
+    version: str
+    status: OtaReleaseStatus
+    sha256: str
+    size_bytes: int
+    signing_key_id: Optional[str] = None
+    release_notes: Optional[str] = None
+    created_by: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OtaAssignmentCreate(BaseModel):
+    release_id: int = Field(..., gt=0)
+    device_ids: List[int] = Field(..., min_length=1, max_length=100)
+    mandatory: bool = False
+    rollback: bool = False
+
+
+class OtaAssignmentResponse(BaseModel):
+    id: int
+    device_id: int
+    device_uid: str
+    release_id: int
+    version: str
+    from_version: Optional[str] = None
+    state: OtaAssignmentState
+    progress: Optional[int] = None
+    attempt_count: int
+    last_error_code: Optional[str] = None
+    last_error_detail: Optional[str] = None
+    requested_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_report_at: Optional[datetime] = None
+    is_rollback: bool
+    mandatory: bool
+
+
+class OtaAssignmentBatchResponse(BaseModel):
+    items: List[OtaAssignmentResponse]
+    publish_failures: List[int] = Field(default_factory=list)
+
+
+class OtaStatusMessage(BaseModel):
+    schema_version: int = Field(1, alias="schema")
+    message_id: str = Field(..., min_length=1, max_length=128)
+    assignment_id: int = Field(..., gt=0)
+    running_version: str = Field(..., min_length=1, max_length=64)
+    target_version: str = Field(..., min_length=1, max_length=64)
+    state: OtaAssignmentState
+    progress: Optional[int] = Field(None, ge=0, le=100)
+    error_code: Optional[str] = Field(None, max_length=64)
+    error_detail: Optional[str] = Field(None, max_length=500)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AdminFleetDevicePage(BaseModel):
@@ -240,6 +315,7 @@ class AdminDeviceUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     connection_interval: Optional[int] = Field(None, ge=1, le=60)
     operational_mode: Optional[Literal["active", "maintenance", "inactive"]] = None
+    power_profile: Optional[Literal["portable", "panel"]] = None
     deactivation_scheduled_at: Optional[datetime] = None
     reason: Optional[str] = Field(None, max_length=255)
 

@@ -9,7 +9,7 @@ base=/etc/mosquitto/aquanotes
 
 install -d -o root -g mosquitto -m 750 "$base" "$base/certs"
 install -o root -g mosquitto -m 640 /tmp/aquanotes.conf "$base/aquanotes.conf"
-install -o root -g mosquitto -m 640 /tmp/acl "$base/acl"
+install -o mosquitto -g mosquitto -m 640 /tmp/acl "$base/acl"
 
 cd "$base/certs"
 if [ ! -f ca.key ]; then

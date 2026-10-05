@@ -11,7 +11,8 @@ from app.routers import (
     monitoring, 
     export,
     device_threshold,
-    notifications
+    notifications,
+    ota,
 )
 from app.background_tasks import start_background_task
 from app.mqtt_consumer import start_mqtt_consumer, stop_mqtt_consumer
@@ -48,6 +49,7 @@ app.include_router(monitoring.router)
 app.include_router(export.router)
 app.include_router(device_threshold.router)
 app.include_router(notifications.router)
+app.include_router(ota.router)
 
 
 @app.get("/health", tags=["System"])
@@ -95,6 +97,16 @@ def migrate_database():
                 with engine.begin() as connection:
                     connection.exec_driver_sql("ALTER TABLE devices ADD COLUMN mqtt_credential_updated_at TIMESTAMP")
                 logger.info("Added column: devices.mqtt_credential_updated_at")
+            if "current_firmware_version" not in columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql("ALTER TABLE devices ADD COLUMN current_firmware_version VARCHAR(64)")
+                logger.info("Added column: devices.current_firmware_version")
+            if "power_profile" not in columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE devices ADD COLUMN power_profile VARCHAR(20) NOT NULL DEFAULT 'portable'"
+                    )
+                logger.info("Added column: devices.power_profile")
             with engine.begin() as connection:
                 connection.exec_driver_sql(
                     "UPDATE devices SET mqtt_credential_status='active', mqtt_credential_updated_at=CURRENT_TIMESTAMP "
@@ -106,6 +118,20 @@ def migrate_database():
                 with engine.begin() as connection:
                     connection.exec_driver_sql("ALTER TABLE devices ALTER COLUMN status TYPE VARCHAR(20)")
                 logger.info("Expanded column: devices.status")
+        if inspector.has_table("firmware_releases"):
+            release_columns = {
+                column["name"] for column in inspect(engine).get_columns("firmware_releases")
+            }
+            if "signature" not in release_columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql("ALTER TABLE firmware_releases ADD COLUMN signature TEXT")
+                logger.info("Added column: firmware_releases.signature")
+            if "signing_key_id" not in release_columns:
+                with engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE firmware_releases ADD COLUMN signing_key_id VARCHAR(32)"
+                    )
+                logger.info("Added column: firmware_releases.signing_key_id")
         return
     try:
         # Cek apakah kolom sudah ada
@@ -153,6 +179,23 @@ def migrate_database():
         if 'mqtt_credential_updated_at' not in columns:
             cursor.execute("ALTER TABLE devices ADD COLUMN mqtt_credential_updated_at DATETIME")
             logger.info("Added column: mqtt_credential_updated_at")
+
+        if 'current_firmware_version' not in columns:
+            cursor.execute("ALTER TABLE devices ADD COLUMN current_firmware_version VARCHAR(64)")
+            logger.info("Added column: current_firmware_version")
+
+        if 'power_profile' not in columns:
+            cursor.execute("ALTER TABLE devices ADD COLUMN power_profile VARCHAR(20) NOT NULL DEFAULT 'portable'")
+            logger.info("Added column: power_profile")
+
+        cursor.execute("PRAGMA table_info(firmware_releases)")
+        release_columns = [info[1] for info in cursor.fetchall()]
+        if release_columns and 'signature' not in release_columns:
+            cursor.execute("ALTER TABLE firmware_releases ADD COLUMN signature TEXT")
+            logger.info("Added column: firmware_releases.signature")
+        if release_columns and 'signing_key_id' not in release_columns:
+            cursor.execute("ALTER TABLE firmware_releases ADD COLUMN signing_key_id VARCHAR(32)")
+            logger.info("Added column: firmware_releases.signing_key_id")
 
         cursor.execute(
             "UPDATE devices SET mqtt_credential_status='active', mqtt_credential_updated_at=CURRENT_TIMESTAMP "

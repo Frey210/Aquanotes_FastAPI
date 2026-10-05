@@ -11,6 +11,8 @@ services:
       - ./secrets/mqtt-ca.crt:/app/secrets/mqtt-ca.crt:ro
       - ./secrets/mqtt-provisioner-key:/run/secrets/mqtt-provisioner-key:ro
       - ./secrets/mqtt-known-hosts:/run/secrets/mqtt-known-hosts:ro
+      - ./secrets/ota-signing-public.pem:/app/secrets/ota-signing-public.pem:ro
+      - /srv/aquanotes-ota/artifacts:/app/ota-artifacts
     ports:
       - "192.168.10.64:8000:8000"
     healthcheck:

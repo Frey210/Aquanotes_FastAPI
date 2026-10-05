@@ -49,7 +49,7 @@ def register_device(
         )
     
     # Buat device baru tanpa pemilik
-    new_device = models.Device(uid=device.uid)
+    new_device = models.Device(uid=device.uid, power_profile=device.power_profile)
     db.add(new_device)
     db.commit()
     db.refresh(new_device)
@@ -125,6 +125,8 @@ def _fleet_device(device: models.Device) -> dict:
         "connection_interval": device.connection_interval or 5,
         "deactivation_scheduled_at": device.deactivation_scheduled_at,
         "mqtt_credential_status": device.mqtt_credential_status or "unprovisioned",
+        "current_firmware_version": device.current_firmware_version,
+        "power_profile": device.power_profile or "portable",
     }
 
 
@@ -268,10 +270,10 @@ def create_fleet_device(
     if db.query(models.Device).filter(models.Device.uid == payload.uid).first():
         raise HTTPException(status_code=409, detail="Device UID already registered")
 
-    device = models.Device(uid=payload.uid)
+    device = models.Device(uid=payload.uid, power_profile=payload.power_profile)
     db.add(device)
     db.flush()
-    _audit(db, actor, "device.create", device, None, {"uid": device.uid})
+    _audit(db, actor, "device.create", device, None, {"uid": device.uid, "power_profile": device.power_profile})
     db.commit()
     db.refresh(device)
     return _provision_mqtt(device, actor, db)
@@ -291,7 +293,7 @@ def provision_fleet_device_mqtt(
 
 def _provision_mqtt(device: models.Device, actor: models.User, db: Session) -> dict:
     try:
-        credential = provision_device(device.uid)
+        credential = provision_device(device.uid, device.power_profile or "portable")
     except MqttProvisioningError as exc:
         device.mqtt_credential_status = "error"
         device.mqtt_credential_updated_at = datetime.utcnow()
@@ -344,6 +346,8 @@ def update_fleet_device(
         else:
             device.status = "online" if _connectivity_status(device) == "online" else "offline"
             device.deactivation_scheduled_at = None
+    if payload.power_profile is not None:
+        device.power_profile = payload.power_profile
     if "deactivation_scheduled_at" in payload.model_fields_set:
         device.deactivation_scheduled_at = utc_naive(payload.deactivation_scheduled_at) if payload.deactivation_scheduled_at else None
         if device.deactivation_scheduled_at and device.deactivation_scheduled_at <= datetime.utcnow():

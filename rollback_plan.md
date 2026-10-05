@@ -272,3 +272,27 @@ dan aman dibiarkan. Backup sebelum deployment tersedia di database host:
 `/var/backups/aquanotes/pre-mqtt-credentials-20260927.dump` dengan SHA-256
 `793554625361d9197d9e1647dc4ea6f5114744892b916cf6cb8f0b376d70f16a`.
 Restore database hanya jika validasi menunjukkan kerusakan data.
+
+## Rollback profil daya panel (5 Oktober 2026)
+
+Production aktif memakai source `/srv/aquanotes-stage2/release-20261005-power-profile`,
+image web `aquanotes-web:20261005-power-profile`, dan kolom aditif
+`devices.power_profile` dengan default aman `portable`.
+
+- Dump PostgreSQL: `/srv/aquanotes-stage2/backups/power-profile-20261005/aquanotes.dump`
+- SHA-256: `d858de5420a9de941e7f832d28b518ec1e8a4693776fecb157d69eacb3cae3f8`
+- Image API lama: `stage2-api:pre-power-profile-20261005`
+- Firmware panel known-good: `2.1.4-panel-bootstrap`
+
+Rollback aplikasi tidak memerlukan restore database:
+
+```bash
+cd /srv/aquanotes-stage2/release-20261004-ota/deployment/stage2
+docker image tag stage2-api:pre-power-profile-20261005 stage2-api:latest
+WEB_IMAGE=aquanotes-web:20261004-ota-signed2 docker compose -p stage2 up -d --force-recreate api web
+```
+
+Kolom `power_profile` aman dibiarkan. Untuk rollback firmware panel, buat
+assignment OTA ke `2.1.4-panel-bootstrap` dengan `rollback=true`; jangan
+memakai `2.1.3-ota-canary` karena release itu salah memblokir panel dengan
+`LOW_BATTERY` dan telah di-retire.

@@ -30,3 +30,4 @@ __pycache__/
 /*.code-workspace
 *.log
 /deployment/evidence/
+/tmp-release-audit/

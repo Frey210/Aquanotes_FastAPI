@@ -86,12 +86,15 @@ class Device(Base):
     deactivation_scheduled_at = Column(DateTime, nullable=True)
     mqtt_credential_status = Column(String(20), nullable=False, default="unprovisioned", server_default="unprovisioned")
     mqtt_credential_updated_at = Column(DateTime, nullable=True)
+    power_profile = Column(String(20), nullable=False, default="portable", server_default="portable")
     
     owner = relationship("User", back_populates="devices")
     kolam = relationship("Kolam", back_populates="device", uselist=False)
     sensor_data = relationship("SensorData", back_populates="device")
     assignments = relationship("DeviceAssignment", back_populates="device")
     notifications = relationship("Notification", back_populates="device")
+    ota_assignments = relationship("DeviceOtaAssignment", back_populates="device")
+    current_firmware_version = Column(String(64), nullable=True)
 
 class Kolam(Base):
     __tablename__ = "kolam"
@@ -227,3 +230,76 @@ class MaintenanceRequest(Base):
     admin_note = Column(String(255), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FirmwareRelease(Base):
+    __tablename__ = "firmware_releases"
+
+    id = Column(Integer, primary_key=True)
+    version = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="draft", server_default="draft")
+    artifact_filename = Column(String(255), unique=True, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    signature = Column(Text, nullable=True)
+    signing_key_id = Column(String(32), nullable=True)
+    release_notes = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    assignments = relationship("DeviceOtaAssignment", back_populates="release")
+
+
+class DeviceOtaAssignment(Base):
+    __tablename__ = "device_ota_assignments"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    release_id = Column(Integer, ForeignKey("firmware_releases.id"), nullable=False, index=True)
+    from_version = Column(String(64), nullable=True)
+    state = Column(String(30), nullable=False, default="assigned", server_default="assigned", index=True)
+    progress = Column(Integer, nullable=True)
+    attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+    download_token_hash = Column(String(64), nullable=False)
+    last_error_code = Column(String(64), nullable=True)
+    last_error_detail = Column(String(500), nullable=True)
+    requested_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    requested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_report_at = Column(DateTime, nullable=True)
+    is_rollback = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    mandatory = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+
+    device = relationship("Device", back_populates="ota_assignments")
+    release = relationship("FirmwareRelease", back_populates="assignments")
+    events = relationship("DeviceOtaEvent", back_populates="assignment", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_device_ota_assignments_device_state", "device_id", "state"),
+        Index(
+            "ux_device_ota_assignments_active",
+            "device_id",
+            unique=True,
+            sqlite_where=text("state IN ('assigned','deferred','downloading','downloaded','rebooting','pending_verify')"),
+            postgresql_where=text("state IN ('assigned','deferred','downloading','downloaded','rebooting','pending_verify')"),
+        ),
+    )
+
+
+class DeviceOtaEvent(Base):
+    __tablename__ = "device_ota_events"
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("device_ota_assignments.id", ondelete="CASCADE"), nullable=False)
+    message_id = Column(String(128), nullable=False)
+    state = Column(String(30), nullable=False)
+    progress = Column(Integer, nullable=True)
+    error_code = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    assignment = relationship("DeviceOtaAssignment", back_populates="events")
+
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "message_id", name="uq_device_ota_event_message"),
+    )

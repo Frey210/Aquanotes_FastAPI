@@ -1,6 +1,10 @@
 user aquanotes-backend
 topic read devices/+/telemetry
+topic read devices/+/ota/status
+topic write devices/+/ota/desired
 topic read $SYS/broker/#
 
 # Device username must equal its UID.
 pattern write devices/%u/telemetry
+pattern write devices/%u/ota/status
+pattern read devices/%u/ota/desired

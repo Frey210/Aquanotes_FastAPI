@@ -31,6 +31,17 @@ def parse_mqtt_payload(topic: str, payload: bytes):
     return schemas.SensorDataCreate.model_validate(body), message_id
 
 
+def parse_ota_status_payload(topic: str, payload: bytes):
+    parts = topic.split("/")
+    if len(parts) != 4 or parts[0] != "devices" or parts[2:] != ["ota", "status"]:
+        raise ValueError("Invalid OTA status topic")
+    uid = parts[1]
+    body = json.loads(payload)
+    if not isinstance(body, dict):
+        raise ValueError("OTA status payload must be a JSON object")
+    return uid, schemas.OtaStatusMessage.model_validate(body)
+
+
 def start_mqtt_consumer() -> bool:
     global _client
     if os.getenv("MQTT_ENABLED", "false").lower() not in {"1", "true", "yes"}:
@@ -77,16 +88,32 @@ def stop_mqtt_consumer() -> None:
         _client = None
 
 
+def publish_message(topic: str, payload: str, retain: bool = False) -> bool:
+    client = _client
+    if client is None or not client.is_connected():
+        logger.warning("MQTT publish skipped while disconnected: %s", topic)
+        return False
+    result = client.publish(topic, payload=payload, qos=1, retain=retain)
+    return result.rc == mqtt.MQTT_ERR_SUCCESS
+
+
 def _on_connect(client, _userdata, _flags, reason_code, _properties) -> None:
     if reason_code.is_failure:
         logger.error("MQTT connection rejected: %s", reason_code)
         return
-    topic = os.getenv("MQTT_TOPIC", "devices/+/telemetry")
-    client.subscribe(topic, qos=1)
-    logger.info("MQTT connected and subscribed to %s", topic)
+    topics = [
+        os.getenv("MQTT_TOPIC", "devices/+/telemetry"),
+        os.getenv("MQTT_OTA_STATUS_TOPIC", "devices/+/ota/status"),
+    ]
+    for topic in topics:
+        client.subscribe(topic, qos=1)
+    logger.info("MQTT connected and subscribed to %s", ", ".join(topics))
 
 
 def _on_message(client, _userdata, message) -> None:
+    if message.topic.endswith("/ota/status"):
+        _on_ota_status(client, message)
+        return
     try:
         data, message_id = parse_mqtt_payload(message.topic, message.payload)
     except Exception:
@@ -101,6 +128,34 @@ def _on_message(client, _userdata, message) -> None:
     except Exception:
         db.rollback()
         logger.exception("MQTT ingestion failed; reconnecting for QoS redelivery")
+        _schedule_reconnect(client)
+    finally:
+        db.close()
+
+
+def _on_ota_status(client, message) -> None:
+    try:
+        uid, status = parse_ota_status_payload(message.topic, message.payload)
+    except Exception:
+        logger.exception("Discarding invalid OTA status on %s", message.topic)
+        client.ack(message.mid, message.qos)
+        return
+
+    db = SessionLocal()
+    try:
+        from app.ota_service import process_status
+
+        process_status(uid, status, db)
+        client.ack(message.mid, message.qos)
+        if status.state in {"success", "cancelled"}:
+            publish_message(f"devices/{uid}/ota/desired", "", retain=True)
+    except ValueError:
+        db.rollback()
+        logger.exception("Discarding unauthorized or inconsistent OTA status on %s", message.topic)
+        client.ack(message.mid, message.qos)
+    except Exception:
+        db.rollback()
+        logger.exception("OTA status processing failed; reconnecting for QoS redelivery")
         _schedule_reconnect(client)
     finally:
         db.close()
