@@ -48,6 +48,16 @@ def artifact_path(release: models.FirmwareRelease) -> Path:
     return path
 
 
+def factory_artifact_path(release: models.FirmwareRelease) -> Path:
+    if not release.factory_artifact_filename:
+        raise ValueError("Factory artifact is unavailable")
+    path = (OTA_ARTIFACT_DIR / release.factory_artifact_filename).resolve()
+    root = OTA_ARTIFACT_DIR.resolve()
+    if path.parent != root:
+        raise ValueError("Invalid factory artifact path")
+    return path
+
+
 def assignment_response(assignment: models.DeviceOtaAssignment) -> dict:
     return {
         "id": assignment.id,

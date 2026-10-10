@@ -291,6 +291,31 @@ def provision_fleet_device_mqtt(
     return _provision_mqtt(device, actor, db)
 
 
+@router.post("/fleet/devices/{device_id}/flash-report", response_model=schemas.MessageResponse)
+def report_manufacturing_flash(
+    device_id: int,
+    payload: schemas.ManufacturingFlashReport,
+    actor: models.User = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    device = db.get(models.Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if payload.uid != device.uid:
+        raise HTTPException(status_code=409, detail="Reported UID does not match device")
+    _audit(
+        db,
+        actor,
+        f"device.flash.{payload.result}",
+        device,
+        None,
+        payload.model_dump(),
+        payload.detail,
+    )
+    db.commit()
+    return {"message": "Flash report recorded"}
+
+
 def _provision_mqtt(device: models.Device, actor: models.User, db: Session) -> dict:
     try:
         credential = provision_device(device.uid, device.power_profile or "portable")

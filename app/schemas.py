@@ -210,6 +210,15 @@ class AdminMqttCredentialResponse(AdminFleetDeviceResponse):
     secrets_h: str
 
 
+class ManufacturingFlashReport(BaseModel):
+    uid: str = Field(..., min_length=3, max_length=36)
+    chip_mac: str = Field(..., pattern=r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
+    firmware_version: str = Field(..., min_length=5, max_length=64)
+    power_profile: Literal["portable", "panel"]
+    result: Literal["success", "failed"]
+    detail: Optional[str] = Field(None, max_length=500)
+
+
 OtaReleaseStatus = Literal["draft", "ready", "retired"]
 OtaAssignmentState = Literal[
     "assigned", "deferred", "downloading", "downloaded", "rebooting",
@@ -229,6 +238,10 @@ class FirmwareReleaseResponse(BaseModel):
     sha256: str
     size_bytes: int
     signing_key_id: Optional[str] = None
+    factory_sha256: Optional[str] = None
+    factory_size_bytes: Optional[int] = None
+    factory_signature: Optional[str] = None
+    factory_only: bool = False
     release_notes: Optional[str] = None
     created_by: int
     created_at: datetime

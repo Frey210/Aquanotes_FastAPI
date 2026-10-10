@@ -166,6 +166,51 @@ class OtaTest(unittest.TestCase):
                     published = ota.publish_release(release.id, self.admin, self.db)
                 self.assertEqual(published.status, "ready")
 
+    def test_factory_artifact_is_signed_published_and_downloadable_by_admin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = b"firmware-image"
+            factory_image = b"factory-image"
+            private_key = ec.generate_private_key(ec.SECP256R1())
+            public_key_path = Path(directory) / "public.pem"
+            public_key_path.write_bytes(private_key.public_key().public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            ))
+            artifact = UploadFile(filename="firmware.bin", file=BytesIO(image))
+            signature = UploadFile(
+                filename="firmware.sig",
+                file=BytesIO(private_key.sign(image, ec.ECDSA(hashes.SHA256()))),
+            )
+            factory_artifact = UploadFile(filename="factory.bin", file=BytesIO(factory_image))
+            factory_signature = UploadFile(
+                filename="factory.sig",
+                file=BytesIO(private_key.sign(factory_image, ec.ECDSA(hashes.SHA256()))),
+            )
+            with patch.object(ota, "OTA_ARTIFACT_DIR", Path(directory)), patch.object(
+                ota, "OTA_SIGNING_PUBLIC_KEY_PATH", public_key_path
+            ):
+                release = ota.upload_release(
+                    "2.3.0", "factory", artifact, signature, self.admin, self.db,
+                    factory_artifact, factory_signature, True,
+                )
+                self.assertTrue(release.factory_only)
+                self.assertEqual(release.factory_sha256, hashlib.sha256(factory_image).hexdigest())
+                stored = Path(directory) / release.artifact_filename
+                factory_stored = Path(directory) / release.factory_artifact_filename
+                with patch("app.routers.ota.artifact_path", return_value=stored), patch(
+                    "app.routers.ota.factory_artifact_path", return_value=factory_stored
+                ):
+                    published = ota.publish_release(release.id, self.admin, self.db)
+                    response = ota.download_factory_artifact(release.id, self.admin, self.db)
+                self.assertEqual(published.status, "ready")
+                self.assertEqual(response.headers["x-artifact-sha256"], release.factory_sha256)
+                with self.assertRaisesRegex(HTTPException, "Factory-only"):
+                    ota.create_assignments(
+                        schemas.OtaAssignmentCreate(release_id=release.id, device_ids=[self.device.id]),
+                        self.admin,
+                        self.db,
+                    )
+
     def test_artifact_token_is_bound_to_assignment(self):
         assignment, token = self._assignment()
         with tempfile.TemporaryDirectory() as directory:

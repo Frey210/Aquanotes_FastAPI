@@ -132,6 +132,19 @@ def migrate_database():
                         "ALTER TABLE firmware_releases ADD COLUMN signing_key_id VARCHAR(32)"
                     )
                 logger.info("Added column: firmware_releases.signing_key_id")
+            for name, definition in (
+                ("factory_artifact_filename", "VARCHAR(255)"),
+                ("factory_sha256", "VARCHAR(64)"),
+                ("factory_size_bytes", "INTEGER"),
+                ("factory_signature", "TEXT"),
+                ("factory_only", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ):
+                if name not in release_columns:
+                    with engine.begin() as connection:
+                        connection.exec_driver_sql(
+                            f"ALTER TABLE firmware_releases ADD COLUMN {name} {definition}"
+                        )
+                    logger.info("Added column: firmware_releases.%s", name)
         return
     try:
         # Cek apakah kolom sudah ada
@@ -196,6 +209,16 @@ def migrate_database():
         if release_columns and 'signing_key_id' not in release_columns:
             cursor.execute("ALTER TABLE firmware_releases ADD COLUMN signing_key_id VARCHAR(32)")
             logger.info("Added column: firmware_releases.signing_key_id")
+        for name, definition in (
+            ('factory_artifact_filename', 'VARCHAR(255)'),
+            ('factory_sha256', 'VARCHAR(64)'),
+            ('factory_size_bytes', 'INTEGER'),
+            ('factory_signature', 'TEXT'),
+            ('factory_only', 'BOOLEAN NOT NULL DEFAULT 0'),
+        ):
+            if release_columns and name not in release_columns:
+                cursor.execute(f"ALTER TABLE firmware_releases ADD COLUMN {name} {definition}")
+                logger.info("Added column: firmware_releases.%s", name)
 
         cursor.execute(
             "UPDATE devices SET mqtt_credential_status='active', mqtt_credential_updated_at=CURRENT_TIMESTAMP "

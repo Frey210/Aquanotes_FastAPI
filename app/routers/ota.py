@@ -3,6 +3,7 @@ import hmac
 import os
 import re
 import uuid
+from typing import Annotated
 import base64
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,7 @@ from app.ota_service import (
     hash_download_token,
     new_download_token,
     publish_desired,
+    factory_artifact_path,
 )
 
 
@@ -37,6 +39,7 @@ SEMVER_RE = re.compile(
 )
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 MAX_SIGNATURE_SIZE = 512
+MAX_FACTORY_SIZE = 0x800000
 OTA_SIGNING_PUBLIC_KEY_PATH = Path(
     os.getenv("OTA_SIGNING_PUBLIC_KEY_PATH", "/app/secrets/ota-signing-public.pem")
 )
@@ -73,6 +76,50 @@ def _audit(
     ))
 
 
+def _read_signature(upload: UploadFile, label: str) -> bytes:
+    value = upload.file.read(MAX_SIGNATURE_SIZE + 1)
+    if not value or len(value) > MAX_SIGNATURE_SIZE:
+        raise HTTPException(status_code=422, detail=f"{label} signature is invalid")
+    return value
+
+
+def _store_upload(upload: UploadFile, temp_path: Path, maximum_size: int, label: str) -> tuple[int, str]:
+    size = 0
+    digest = hashlib.sha256()
+    with temp_path.open("xb") as output:
+        while chunk := upload.file.read(UPLOAD_CHUNK_SIZE):
+            size += len(chunk)
+            if size >= maximum_size:
+                raise HTTPException(status_code=413, detail=f"{label} is too large")
+            digest.update(chunk)
+            output.write(chunk)
+    if size == 0:
+        raise HTTPException(status_code=422, detail=f"{label} is empty")
+    return size, digest.hexdigest()
+
+
+def _verify_stored_artifact(path: Path, size: int, digest_hex: str, signature_base64: str | None,
+                            public_key, label: str) -> None:
+    if not path.is_file() or path.stat().st_size != size:
+        raise HTTPException(status_code=409, detail=f"{label} is missing or has changed")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(UPLOAD_CHUNK_SIZE):
+            digest.update(chunk)
+    if not hmac.compare_digest(digest.hexdigest(), digest_hex):
+        raise HTTPException(status_code=409, detail=f"{label} hash has changed")
+    if not signature_base64:
+        raise HTTPException(status_code=409, detail=f"{label} signature is missing")
+    try:
+        public_key.verify(
+            base64.b64decode(signature_base64, validate=True),
+            bytes.fromhex(digest_hex),
+            ec.ECDSA(utils.Prehashed(hashes.SHA256())),
+        )
+    except (InvalidSignature, ValueError):
+        raise HTTPException(status_code=409, detail=f"{label} signature verification failed")
+
+
 @router.post(
     "/admin/ota/releases",
     response_model=schemas.FirmwareReleaseResponse,
@@ -85,6 +132,9 @@ def upload_release(
     signature: UploadFile = File(...),
     actor: models.User = Depends(require_admin),
     db: Session = Depends(database.get_db),
+    factory_artifact: Annotated[UploadFile | None, File()] = None,
+    factory_signature: Annotated[UploadFile | None, File()] = None,
+    factory_only: Annotated[bool, Form()] = False,
 ):
     version = version.strip()
     if not SEMVER_RE.fullmatch(version):
@@ -95,6 +145,12 @@ def upload_release(
         raise HTTPException(status_code=415, detail="Artifact must be a .bin file")
     if not signature.filename or not signature.filename.lower().endswith(".sig"):
         raise HTTPException(status_code=415, detail="Signature must be a .sig file")
+    if (factory_artifact is None) != (factory_signature is None):
+        raise HTTPException(status_code=422, detail="Factory artifact and signature must be uploaded together")
+    if factory_artifact and (not factory_artifact.filename or not factory_artifact.filename.lower().endswith(".bin")):
+        raise HTTPException(status_code=415, detail="Factory artifact must be a .bin file")
+    if factory_signature and (not factory_signature.filename or not factory_signature.filename.lower().endswith(".sig")):
+        raise HTTPException(status_code=415, detail="Factory signature must be a .sig file")
     if db.query(models.FirmwareRelease.id).filter(models.FirmwareRelease.version == version).first():
         raise HTTPException(status_code=409, detail="Firmware version already exists")
 
@@ -102,32 +158,37 @@ def upload_release(
     filename = f"{uuid.uuid4().hex}.bin"
     final_path = OTA_ARTIFACT_DIR / filename
     temp_path = OTA_ARTIFACT_DIR / f".{filename}.upload"
-    digest = hashlib.sha256()
-    size = 0
+    factory_filename = f"{uuid.uuid4().hex}.factory.bin" if factory_artifact else None
+    factory_final_path = OTA_ARTIFACT_DIR / factory_filename if factory_filename else None
+    factory_temp_path = OTA_ARTIFACT_DIR / f".{factory_filename}.upload" if factory_filename else None
     try:
-        signature_bytes = signature.file.read(MAX_SIGNATURE_SIZE + 1)
-        if not signature_bytes or len(signature_bytes) > MAX_SIGNATURE_SIZE:
-            raise HTTPException(status_code=422, detail="Firmware signature is invalid")
+        signature_bytes = _read_signature(signature, "Firmware")
+        factory_signature_bytes = _read_signature(factory_signature, "Factory") if factory_signature else None
         _, signing_key_id = _load_signing_key()
-        with temp_path.open("xb") as output:
-            while chunk := artifact.file.read(UPLOAD_CHUNK_SIZE):
-                size += len(chunk)
-                if size >= OTA_SLOT_SIZE:
-                    raise HTTPException(status_code=413, detail="Artifact does not fit the OTA slot")
-                digest.update(chunk)
-                output.write(chunk)
-        if size == 0:
-            raise HTTPException(status_code=422, detail="Artifact is empty")
+        size, digest_hex = _store_upload(artifact, temp_path, OTA_SLOT_SIZE, "Firmware artifact")
         os.replace(temp_path, final_path)
+        factory_size = None
+        factory_digest_hex = None
+        if factory_artifact and factory_temp_path and factory_final_path:
+            factory_size, factory_digest_hex = _store_upload(
+                factory_artifact, factory_temp_path, MAX_FACTORY_SIZE + 1, "Factory artifact"
+            )
+            os.replace(factory_temp_path, factory_final_path)
 
         release = models.FirmwareRelease(
             version=version,
             status="draft",
             artifact_filename=filename,
-            sha256=digest.hexdigest(),
+            sha256=digest_hex,
             size_bytes=size,
             signature=base64.b64encode(signature_bytes).decode("ascii"),
             signing_key_id=signing_key_id,
+            factory_artifact_filename=factory_filename,
+            factory_sha256=factory_digest_hex,
+            factory_size_bytes=factory_size,
+            factory_signature=(base64.b64encode(factory_signature_bytes).decode("ascii")
+                               if factory_signature_bytes else None),
+            factory_only=factory_only,
             release_notes=release_notes,
             created_by=actor.id,
         )
@@ -141,6 +202,10 @@ def upload_release(
         db.rollback()
         temp_path.unlink(missing_ok=True)
         final_path.unlink(missing_ok=True)
+        if factory_temp_path:
+            factory_temp_path.unlink(missing_ok=True)
+        if factory_final_path:
+            factory_final_path.unlink(missing_ok=True)
         raise
 
 
@@ -167,33 +232,48 @@ def publish_release(
         raise HTTPException(status_code=404, detail="Firmware release not found")
     if release.status == "retired":
         raise HTTPException(status_code=409, detail="Retired release cannot be published")
-    path = artifact_path(release)
-    if not path.is_file() or path.stat().st_size != release.size_bytes:
-        raise HTTPException(status_code=409, detail="Firmware artifact is missing or has changed")
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(UPLOAD_CHUNK_SIZE):
-            digest.update(chunk)
-    if not hmac.compare_digest(digest.hexdigest(), release.sha256):
-        raise HTTPException(status_code=409, detail="Firmware artifact hash has changed")
-    if not release.signature:
-        raise HTTPException(status_code=409, detail="Firmware signature is missing")
     public_key, signing_key_id = _load_signing_key()
     if release.signing_key_id != signing_key_id:
         raise HTTPException(status_code=409, detail="Firmware signing key does not match")
-    try:
-        public_key.verify(
-            base64.b64decode(release.signature, validate=True),
-            bytes.fromhex(release.sha256),
-            ec.ECDSA(utils.Prehashed(hashes.SHA256())),
+    _verify_stored_artifact(
+        artifact_path(release), release.size_bytes, release.sha256, release.signature,
+        public_key, "Firmware artifact",
+    )
+    if release.factory_artifact_filename:
+        _verify_stored_artifact(
+            factory_artifact_path(release), release.factory_size_bytes, release.factory_sha256,
+            release.factory_signature, public_key, "Factory artifact",
         )
-    except (InvalidSignature, ValueError):
-        raise HTTPException(status_code=409, detail="Firmware signature verification failed")
     release.status = "ready"
     _audit(db, actor, "ota.release.publish", "firmware_release", release.id)
     db.commit()
     db.refresh(release)
     return release
+
+
+@router.get("/admin/ota/releases/{release_id}/factory-artifact")
+def download_factory_artifact(
+    release_id: int,
+    _: models.User = Depends(require_admin),
+    db: Session = Depends(database.get_db),
+):
+    release = db.get(models.FirmwareRelease, release_id)
+    if not release:
+        raise HTTPException(status_code=404, detail="Firmware release not found")
+    if release.status != "ready" or not release.factory_artifact_filename:
+        raise HTTPException(status_code=409, detail="Factory artifact is not ready")
+    try:
+        path = factory_artifact_path(release)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not path.is_file() or path.stat().st_size != release.factory_size_bytes:
+        raise HTTPException(status_code=409, detail="Factory artifact is missing or has changed")
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=f"aquanotes-{release.version}-factory.bin",
+        headers={"X-Artifact-SHA256": release.factory_sha256},
+    )
 
 
 @router.post("/admin/ota/assignments", response_model=schemas.OtaAssignmentBatchResponse, status_code=201)
@@ -205,6 +285,8 @@ def create_assignments(
     release = db.get(models.FirmwareRelease, payload.release_id)
     if not release or release.status != "ready":
         raise HTTPException(status_code=409, detail="Firmware release is not ready")
+    if release.factory_only:
+        raise HTTPException(status_code=409, detail="Factory-only release cannot be assigned over OTA")
 
     device_ids = list(dict.fromkeys(payload.device_ids))
     devices = db.query(models.Device).filter(models.Device.id.in_(device_ids)).all()

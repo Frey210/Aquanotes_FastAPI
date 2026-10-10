@@ -9,7 +9,13 @@ from sqlalchemy.orm import sessionmaker
 from app import auth, models, schemas
 from app.database import Base
 from app.device_state import apply_scheduled_deactivation, operational_mode
-from app.routers.admin import _connectivity_status, _outside_limit, _sensor_values, admin_users
+from app.routers.admin import (
+    _connectivity_status,
+    _outside_limit,
+    _sensor_values,
+    admin_users,
+    report_manufacturing_flash,
+)
 
 
 class AdminRBACTest(unittest.TestCase):
@@ -81,6 +87,30 @@ class AdminRBACTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["email"], "user@example.com")
         self.assertNotIn("password_hash", result["items"][0])
         self.assertNotIn("fcm_token", result["items"][0])
+        db.close()
+
+    def test_flash_report_is_audited_without_credentials(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        admin = models.User(name="Admin", email="admin@example.com", password_hash="hash", role="admin")
+        device = models.Device(uid="AER2023AQ0032", power_profile="portable")
+        db.add_all([admin, device])
+        db.commit()
+        report = schemas.ManufacturingFlashReport(
+            uid=device.uid,
+            chip_mac="AA:BB:CC:DD:EE:FF",
+            firmware_version="2.2.0",
+            power_profile="portable",
+            result="success",
+        )
+
+        response = report_manufacturing_flash(device.id, report, admin, db)
+
+        self.assertEqual(response["message"], "Flash report recorded")
+        audit = db.query(models.AuditLog).one()
+        self.assertEqual(audit.action, "device.flash.success")
+        self.assertNotIn("password", audit.after_json)
         db.close()
 
 
