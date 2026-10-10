@@ -296,3 +296,27 @@ Kolom `power_profile` aman dibiarkan. Untuk rollback firmware panel, buat
 assignment OTA ke `2.1.4-panel-bootstrap` dengan `rollback=true`; jangan
 memakai `2.1.3-ota-canary` karena release itu salah memblokir panel dengan
 `LOW_BATTERY` dan telah di-retire.
+
+## Rollback factory uploader backend (10 Oktober 2026)
+
+Production aktif memakai source `/home/dockeradmin/releases/aquanotes-3793abc`
+dan commit backend `3793abc`. Perubahan database hanya menambah metadata artifact
+factory serta flag `factory_only`; kontrak mobile dan IoT tidak berubah.
+
+- Dump PostgreSQL: `/srv/aquanotes-stage2/backups/factory-uploader-20261010/aquanotes.dump`
+- SHA-256: `53449b9de7f8236992094ffc861ec38a9886917edb2e7a74be9309cb135e4881`
+- Image API sebelumnya: `stage2-api:pre-factory-uploader-20261010`
+
+Rollback aplikasi tidak memerlukan restore database:
+
+```bash
+cd /home/dockeradmin/releases/aquanotes-3793abc
+docker image tag stage2-api:pre-factory-uploader-20261010 stage2-api:latest
+WEB_IMAGE=aquanotes-web:20261010-logo-fix docker compose -p stage2 \
+  -f deployment/stage2/compose.yml up -d --force-recreate --no-deps api
+curl -fsS http://192.168.10.64:8000/health
+```
+
+Release firmware `2.2.0` (ID 7) adalah `factory_only=true`. Jangan membuat
+assignment OTA ke perangkat lama. Baseline generik ini dipasang melalui uploader
+USB agar UID, credential MQTT, dan profil daya tersimpan lebih dahulu di NVS.
