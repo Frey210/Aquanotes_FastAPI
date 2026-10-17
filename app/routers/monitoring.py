@@ -1,13 +1,56 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Literal
+from sqlalchemy import or_, and_
 import logging
 from app import models, schemas, database, auth
 from app.assignments import get_active_assignment
 
 router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 logger = logging.getLogger(__name__)
+
+@router.get("/devices/{device_id}/history", response_model=schemas.SensorHistoryResponse)
+def get_parameter_history(
+    device_id: int,
+    parameter: Literal["suhu", "ph", "do", "tds", "ammonia", "salinitas"],
+    limit: int = Query(24, ge=1, le=100),
+    before_id: Optional[int] = Query(None, gt=0),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    device = db.get(models.Device, device_id)
+    is_admin = current_user.role == "admin"
+    if not device or (not is_admin and device.user_id != current_user.id):
+        raise HTTPException(status_code=404, detail="Device not found")
+    query = db.query(models.SensorData).filter(models.SensorData.device_id == device_id)
+    if not is_admin:
+        query = query.join(models.DeviceAssignment).filter(models.DeviceAssignment.user_id == current_user.id)
+
+    def older_than(row):
+        return or_(models.SensorData.timestamp < row.timestamp, and_(
+            models.SensorData.timestamp == row.timestamp, models.SensorData.id < row.id))
+
+    if before_id is not None:
+        cursor = query.filter(models.SensorData.id == before_id).first()
+        if not cursor:
+            raise HTTPException(status_code=404, detail="History cursor not found")
+        query = query.filter(older_than(cursor))
+    column = getattr(models.SensorData, parameter)
+    ordered = query.order_by(models.SensorData.timestamp.desc(), models.SensorData.id.desc())
+    anchor = ordered.filter(column.is_not(None)).first()
+    if not anchor:
+        return {"readings": [], "next_before_id": None}
+    # Keep null gaps within the historical window; never substitute old data for the live reading.
+    rows = ordered.filter(or_(older_than(anchor), models.SensorData.id == anchor.id)).limit(limit).all()
+    has_older = query.filter(older_than(rows[-1]), column.is_not(None)).first() is not None
+    return {
+        "readings": [schemas.SensorDataSummary(
+            **{key: getattr(row, key) for key in ("suhu", "ph", "do", "tds", "ammonia", "salinitas")},
+            timestamp=row.timestamp.replace(tzinfo=timezone.utc),
+        ) for row in reversed(rows)],
+        "next_before_id": rows[-1].id if has_older else None,
+    }
 
 @router.get("", response_model=schemas.MonitoringResponse, include_in_schema=False)
 @router.get("/", response_model=schemas.MonitoringResponse)

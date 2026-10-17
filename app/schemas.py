@@ -146,6 +146,10 @@ class SensorDataSummary(BaseModel):
     salinitas: Optional[float] = None
     timestamp: Optional[datetime] = None
 
+class SensorHistoryResponse(BaseModel):
+    readings: list[SensorDataSummary]
+    next_before_id: Optional[int] = None
+
 class DeviceMonitoring(BaseModel):
     id: int
     name: str
