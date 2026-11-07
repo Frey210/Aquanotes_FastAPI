@@ -1,0 +1,17 @@
+[Unit]
+Description=Restore Aquanotes application networking after boot
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/aquanotes-bootstrap.py
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=30s
+TimeoutStartSec=180s
+
+[Install]
+WantedBy=multi-user.target
