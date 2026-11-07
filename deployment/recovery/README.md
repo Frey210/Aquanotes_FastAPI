@@ -61,3 +61,15 @@ Software startup tidak dapat menjamin pemulihan jika SSD/host terus mengalami I/
 Referensi: [Docker restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/), [Linux block queue ABI](https://kernel.org/doc/html/latest/admin-guide/abi-stable.html).
 
 Tes lokal: `python -m unittest discover -s tests -p test_power_recovery.py -v` (5 tes, termasuk tidak recreate layanan sehat, penolakan downgrade/tag berubah, serta batas sekali per boot).
+
+## Maintenance lanjutan 7 November 2026
+
+- Backup PostgreSQL pertama berhasil dialirkan langsung ke laptop, 22.594.796 byte, `pg_dump` exit 0. Folder `secrets/backups` dibatasi ACL Windows dan di-ignore Git. Jangan menggunakan berkas `.partial` dari percobaan yang tidak selesai.
+- Checksum SHA-256 hasil transfer diverifikasi ulang; `pg_restore --list` berhasil membaca 186 entri, termasuk TABLE DATA `users` dan `sensor_data`. Belum dilakukan restore penuh ke database uji.
+- Baseline jumlah pengguna/perangkat dan ID sensor terakhir tersimpan di folder backup privat untuk pemeriksaan setelah layanan kembali.
+- Pelepasan WBT sementara membantu proses penyalinan/shutdown; tidak dibuat permanen, dan tidak menonaktifkan fsync atau cache flush. Reboot mengembalikan setting kernel default.
+- Semua enam LXC berhenti melalui shutdown graceful, dengan `forceStop=0`, sebelum `systemctl reboot --no-block` diterima host sekitar 14:53 GMT+8. Tidak melakukan hard power-cycle.
+- Pemeriksaan berikutnya belum dapat mengonfirmasi boot baru: host `.10` tidak menjawab ARP/ping maupun SSH dari Raspberry Pi dan laptop yang sudah terhubung ke `MTC_Group`. Router `.1` dan host lama `.11` tetap dapat diakses.
+- Status aplikasi **belum pulih**. Diperlukan tampilan monitor/console host untuk membedakan shutdown yang tertahan, kegagalan boot/storage, atau interface jaringan yang belum aktif. Jangan mengasumsikan database rusak hanya karena host tidak dapat diakses.
+
+Jika console sudah login, ambil keluaran read-only `uptime`, `ip -br address`, `ip route`, dan `systemctl --failed --no-pager`. Bila tertahan di BIOS/boot/kernel shutdown, kirim foto pesan tersebut sebelum mengambil tindakan power tambahan. Verifikasi baseline dan freshness telemetry tetap wajib setelah server kembali.
